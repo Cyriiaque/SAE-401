@@ -1,0 +1,20 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-white: white;
+  --color-black: black;
+
+  --color-light: var(--color-white);
+  --color-dark: var(--color-black);
+}
+
+@layer {
+  .dark {
+    --color-foreground: var(--color-light);
+    --color-background: var(--color-dark);
+  }
+  .light {
+    --color-foreground: var(--color-dark);
+    --color-background: var(--color-light);
+  }
+}
