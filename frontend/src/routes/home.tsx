@@ -32,7 +32,7 @@ export default function Home() {
   // Charger plus de tweets
   const loadMoreTweets = useCallback(async () => {
     if (!user) return;
-    
+
     setLoading(true);
     try {
       // Simuler un appel API
@@ -66,7 +66,7 @@ export default function Home() {
 
   const handleTweetPublished = (newTweet: Tweet) => {
     if (!user) return;
-    
+
     // Ajouter le tweet à la liste globale
     allTweets.unshift(newTweet);
     setTweets(prev => [newTweet, ...prev]);
@@ -105,7 +105,7 @@ export default function Home() {
         <div className="flex justify-between items-center p-4">
           <h1 className="text-xl font-bold">Accueil</h1>
           <div className="flex items-center gap-4">
-            <span className="text-gray-600">@{user.username}</span>
+            <span className="text-gray-600">@{user.mention}</span>
             <Button
               variant="outline"
               size="default"

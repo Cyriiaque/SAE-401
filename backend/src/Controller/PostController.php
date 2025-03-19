@@ -18,23 +18,30 @@ class PostController extends AbstractController
         $page = max(1, $request->query->getInt('page', 1));
         $limit = 2;
         $offset = ($page - 1) * $limit;
-        
+
         $paginator = $postRepository->paginateAllOrderedByLatest();
         $totalPostsCount = $paginator->count();
         $totalPages = ceil($totalPostsCount / $limit);
-        
+
         // Calcul des pages précédente et suivante
         $previousPage = $page > 1 ? $page - 1 : null;
         $nextPage = $page < $totalPages ? $page + 1 : null;
-        
+
         $posts = [];
         $count = 0;
         foreach ($paginator as $post) {
             if ($count >= $offset && $count < ($offset + $limit)) {
+                $user = $post->getIdUser();
                 $posts[] = [
                     'id' => $post->getId(),
                     'content' => $post->getContent(),
-                    'created_at' => $post->getCreatedAt()->format('Y-m-d H:i:s')
+                    'created_at' => $post->getCreatedAt()->format('Y-m-d H:i:s'),
+                    'user' => $user ? [
+                        'id' => $user->getId(),
+                        'email' => $user->getEmail(),
+                        'name' => $user->getName(),
+                        'mention' => $user->getMention()
+                    ] : null
                 ];
             }
             $count++;

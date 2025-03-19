@@ -7,13 +7,16 @@ use App\Repository\AccessTokenRepository;
 use Symfony\Component\Security\Core\Exception\BadCredentialsException;
 use Symfony\Component\Security\Http\AccessToken\AccessTokenHandlerInterface;
 use Symfony\Component\Security\Http\Authenticator\Passport\Badge\UserBadge;
+use App\Entity\User;
+use App\Entity\AccessToken;
+use Doctrine\ORM\EntityManagerInterface;
 
 class AccessTokenHandler implements AccessTokenHandlerInterface
 {
     public function __construct(
-        private AccessTokenRepository $repository
-    ) {
-    }
+        private AccessTokenRepository $repository,
+        private EntityManagerInterface $entityManager
+    ) {}
 
     public function getUserBadgeFrom(string $accessToken): UserBadge
     {
@@ -27,5 +30,19 @@ class AccessTokenHandler implements AccessTokenHandlerInterface
         // (this is the same identifier used in Security configuration; it can be an email,
         // a UUID, a username, a database ID, etc.)
         return new UserBadge($accessToken->getUserId());
+    }
+
+    public function createToken(User $user): string
+    {
+        $token = bin2hex(random_bytes(32));
+        $accessToken = new AccessToken();
+        $accessToken->setToken($token);
+        $accessToken->setIdUser($user);
+        $accessToken->setCreatedAt(new \DateTime());
+
+        $this->entityManager->persist($accessToken);
+        $this->entityManager->flush();
+
+        return $token;
     }
 }

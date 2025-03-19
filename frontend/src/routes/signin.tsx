@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import Button from '../ui/buttons';
 import { useNavigate } from 'react-router-dom';
-import { login, LoginCredentials } from '../lib/loaders';
+import { login } from '../lib/loaders';
 
 export default function SignIn() {
   const navigate = useNavigate();
@@ -11,11 +11,12 @@ export default function SignIn() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError('');
     try {
       await login({ email, password });
-      navigate('/home');
+      navigate('/');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Une erreur est survenue');
+      setError('Email ou mot de passe incorrect');
     }
   };
 

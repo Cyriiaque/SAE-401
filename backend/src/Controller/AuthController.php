@@ -3,19 +3,26 @@
 namespace App\Controller;
 
 use App\Entity\User;
+use App\Security\AccessTokenHandler;
 use Doctrine\ORM\EntityManagerInterface;
-use Lexik\Bundle\JWTAuthenticationBundle\Services\JWTTokenManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 use Symfony\Component\Routing\Annotation\Route;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
+use Symfony\Component\Security\Http\Authentication\AuthenticationUtils;
 
 class AuthController extends AbstractController
 {
+    public function __construct(
+        private AccessTokenHandler $tokenHandler,
+        private EntityManagerInterface $entityManager,
+        private UserPasswordHasherInterface $passwordHasher
+    ) {}
+
     #[Route('/login', name: 'login', methods: ['POST'])]
-    public function login(Request $request, JWTTokenManagerInterface $JWTManager): JsonResponse
+    public function login(Request $request): JsonResponse
     {
         $data = json_decode($request->getContent(), true);
 
@@ -25,13 +32,22 @@ class AuthController extends AbstractController
             ], JsonResponse::HTTP_BAD_REQUEST);
         }
 
+        $user = $this->entityManager->getRepository(User::class)->findOneBy(['email' => $data['email']]);
+        if (!$user || !$this->passwordHasher->isPasswordValid($user, $data['password'])) {
+            return $this->json([
+                'message' => 'Identifiants invalides'
+            ], JsonResponse::HTTP_UNAUTHORIZED);
+        }
+
+        $token = $this->tokenHandler->createToken($user);
+
         return $this->json([
-            'token' => $JWTManager->create($this->getUser()),
+            'token' => $token,
             'user' => [
-                'id' => $this->getUser()->getId(),
-                'email' => $this->getUser()->getEmail(),
-                'name' => $this->getUser()->getName(),
-                'mention' => $this->getUser()->getMention()
+                'id' => $user->getId(),
+                'email' => $user->getEmail(),
+                'name' => $user->getName(),
+                'mention' => $user->getMention()
             ]
         ]);
     }
