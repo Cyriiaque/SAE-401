@@ -3,7 +3,6 @@
 namespace App\Controller;
 
 use App\Entity\User;
-use App\Security\AccessTokenHandler;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -16,12 +15,11 @@ use Symfony\Component\Security\Http\Authentication\AuthenticationUtils;
 class AuthController extends AbstractController
 {
     public function __construct(
-        private AccessTokenHandler $tokenHandler,
         private EntityManagerInterface $entityManager,
         private UserPasswordHasherInterface $passwordHasher
     ) {}
 
-    #[Route('/login', name: 'login', methods: ['POST'])]
+    #[Route('/login', name: 'login', methods: ['POST'], format: 'json')]
     public function login(Request $request): JsonResponse
     {
         $data = json_decode($request->getContent(), true);
@@ -39,7 +37,10 @@ class AuthController extends AbstractController
             ], JsonResponse::HTTP_UNAUTHORIZED);
         }
 
-        $token = $this->tokenHandler->createToken($user);
+        // Générer un nouveau token et l'enregistrer dans la base de données
+        $token = bin2hex(random_bytes(32));
+        $user->setApiToken($token);
+        $this->entityManager->flush();
 
         return $this->json([
             'token' => $token,
@@ -47,7 +48,8 @@ class AuthController extends AbstractController
                 'id' => $user->getId(),
                 'email' => $user->getEmail(),
                 'name' => $user->getName(),
-                'mention' => $user->getMention()
+                'mention' => $user->getMention(),
+                'avatar' => $user->getAvatar()
             ]
         ]);
     }

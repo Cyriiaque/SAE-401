@@ -23,8 +23,7 @@ class PostRepository extends ServiceEntityRepository
             ->orderBy('p.created_at', 'DESC')
             ->setFirstResult(0)
             ->setMaxResults(50)
-            ->getQuery()
-        ;
+            ->getQuery();
 
         return new Paginator($query);
     }

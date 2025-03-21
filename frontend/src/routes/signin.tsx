@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import Button from '../ui/buttons';
 import { useNavigate } from 'react-router-dom';
-import { login } from '../lib/loaders';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function SignIn() {
   const navigate = useNavigate();
+  const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -13,7 +14,7 @@ export default function SignIn() {
     e.preventDefault();
     setError('');
     try {
-      await login({ email, password });
+      await login(email, password);
       navigate('/');
     } catch (err) {
       setError('Email ou mot de passe incorrect');

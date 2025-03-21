@@ -9,6 +9,13 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Annotation\Route;
 use Symfony\Component\Security\Http\Authentication\AuthenticationUtils;
+use Symfony\Component\Security\Http\Attribute\IsGranted;
+use Symfony\Component\Serializer\SerializerInterface;
+use Symfony\Component\Validator\Validator\ValidatorInterface;
+use App\Service\PostService;
+use Symfony\Component\HttpFoundation\JsonResponse;
+use App\Request\CreatePostRequest;
+use Symfony\Component\Security\Http\Attribute\CurrentUser;
 
 class PostController extends AbstractController
 {
@@ -40,7 +47,8 @@ class PostController extends AbstractController
                         'id' => $user->getId(),
                         'email' => $user->getEmail(),
                         'name' => $user->getName(),
-                        'mention' => $user->getMention()
+                        'mention' => $user->getMention(),
+                        'avatar' => $user->getAvatar()
                     ] : null
                 ];
             }
@@ -52,5 +60,31 @@ class PostController extends AbstractController
             'previous_page' => $previousPage,
             'next_page' => $nextPage
         ]);
+    }
+
+    #[Route('/addpost', name: 'posts.create', methods: ['POST'], format: 'json')]
+    #[IsGranted('ROLE_USER')]
+    public function createPost(
+        Request $request,
+        SerializerInterface $serializer,
+        ValidatorInterface $validator,
+        PostService $postService,
+        #[CurrentUser] $user
+    ): JsonResponse {
+        if (!$user) {
+            return $this->json(['message' => 'Non authentifié'], Response::HTTP_UNAUTHORIZED);
+        }
+
+        /** @var CreatePostRequest $payload */
+        $payload = $serializer->deserialize($request->getContent(), CreatePostRequest::class, 'json');
+
+        $errors = $validator->validate($payload);
+        if (count($errors) > 0) {
+            return $this->json(['errors' => (string) $errors], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $post = $postService->create($payload, $user);
+
+        return $this->json(['id' => $post->getId()], Response::HTTP_CREATED);
     }
 }

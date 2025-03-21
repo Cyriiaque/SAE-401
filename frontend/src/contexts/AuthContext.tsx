@@ -3,6 +3,7 @@ import { User, login, logout, register } from '../lib/loaders';
 
 interface AuthContextType {
   user: User | null;
+  setUser: (user: User | null) => void;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
   register: (email: string, password: string, fullName: string, username: string) => Promise<void>;
@@ -29,7 +30,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, login: handleLogin, logout: handleLogout, register: handleRegister }}>
+    <AuthContext.Provider value={{ user, setUser, login: handleLogin, logout: handleLogout, register: handleRegister }}>
       {children}
     </AuthContext.Provider>
   );

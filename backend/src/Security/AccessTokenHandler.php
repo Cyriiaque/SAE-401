@@ -3,44 +3,57 @@
 // src/Security/AccessTokenHandler.php
 namespace App\Security;
 
-use App\Repository\AccessTokenRepository;
+use App\Repository\UserRepository;
 use Symfony\Component\Security\Core\Exception\BadCredentialsException;
 use Symfony\Component\Security\Http\AccessToken\AccessTokenHandlerInterface;
 use Symfony\Component\Security\Http\Authenticator\Passport\Badge\UserBadge;
 use App\Entity\User;
-use App\Entity\AccessToken;
 use Doctrine\ORM\EntityManagerInterface;
+use Psr\Log\LoggerInterface;
 
 class AccessTokenHandler implements AccessTokenHandlerInterface
 {
     public function __construct(
-        private AccessTokenRepository $repository,
-        private EntityManagerInterface $entityManager
+        private UserRepository $repository,
+        private EntityManagerInterface $entityManager,
+        private LoggerInterface $logger
     ) {}
 
     public function getUserBadgeFrom(string $accessToken): UserBadge
     {
-        // e.g. query the "access token" database to search for this token
-        $accessToken = $this->repository->findOneByValue($accessToken);
-        if (null === $accessToken || !$accessToken->isValid()) {
+        // Log le token reçu
+        $this->logger->info('Token reçu: ' . $accessToken);
+
+        // Supprimer le préfixe "Bearer " si présent
+        if (str_starts_with($accessToken, 'Bearer ')) {
+            $accessToken = substr($accessToken, 7);
+            $this->logger->info('Token après suppression du préfixe: ' . $accessToken);
+        }
+
+        // Rechercher le token dans la base de données
+        $user = $this->repository->findOneBy(['api_token' => $accessToken]);
+
+        if (null === $user) {
+            $this->logger->error('Token non trouvé dans la base de données');
             throw new BadCredentialsException('Invalid credentials.');
         }
 
-        // and return a UserBadge object containing the user identifier from the found token
-        // (this is the same identifier used in Security configuration; it can be an email,
-        // a UUID, a username, a database ID, etc.)
-        return new UserBadge($accessToken->getUserId());
+        if (!$user->isValid()) {
+            $this->logger->error('Token expiré');
+            throw new BadCredentialsException('Token expired.');
+        }
+
+        $this->logger->info('User ID trouvé: ' . $user->getId());
+
+        return new UserBadge($user->getId());
     }
 
     public function createToken(User $user): string
     {
         $token = bin2hex(random_bytes(32));
-        $accessToken = new AccessToken();
-        $accessToken->setToken($token);
-        $accessToken->setIdUser($user);
-        $accessToken->setCreatedAt(new \DateTime());
+        $this->logger->info('Nouveau token créé: ' . $token);
 
-        $this->entityManager->persist($accessToken);
+        $user->setApiToken($token);
         $this->entityManager->flush();
 
         return $token;

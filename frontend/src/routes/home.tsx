@@ -1,97 +1,76 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import Button from '../ui/buttons';
-import Publish, { Tweet } from '../components/Publish';
+import Publish from '../components/Publish';
 import TweetCard from '../components/TweetCard';
+import { fetchPosts } from '../lib/loaders';
 
-// Simuler une base de données de tweets globale
-const allTweets: Tweet[] = [];
+interface Post {
+  id: number;
+  content: string;
+  created_at: string;
+  user: {
+    id: number;
+    email: string;
+    name: string;
+    mention: string;
+    avatar: string | null;
+  };
+}
+
+interface PostsResponse {
+  posts: Post[];
+  previous_page: number | null;
+  next_page: number | null;
+}
 
 export default function Home() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const [tweets, setTweets] = useState<Tweet[]>([]);
+  const [posts, setPosts] = useState<Post[]>([]);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
-  const observer = useRef<IntersectionObserver | null>(null);
 
-  // Référence au dernier élément pour l'infinite scroll
-  const lastTweetElementRef = useCallback((node: HTMLDivElement | null) => {
-    if (loading) return;
-    if (observer.current) observer.current.disconnect();
-    observer.current = new IntersectionObserver(entries => {
-      if (entries[0].isIntersecting && hasMore) {
-        setPage(prevPage => prevPage + 1);
-      }
-    });
-    if (node) observer.current.observe(node);
-  }, [loading, hasMore]);
-
-  // Charger plus de tweets
-  const loadMoreTweets = useCallback(async () => {
+  const loadPosts = async (pageNumber: number) => {
     if (!user) return;
 
     setLoading(true);
     try {
-      // Simuler un appel API
-      await new Promise(resolve => setTimeout(resolve, 500));
-      const start = (page - 1) * 10;
-      const newTweets = allTweets.slice(start, start + 10);
-      setTweets(prev => {
-        const existingIds = new Set(prev.map(t => t.id));
-        const uniqueNewTweets = newTweets.filter(t => !existingIds.has(t.id));
-        return [...prev, ...uniqueNewTweets];
-      });
-      setHasMore(newTweets.length === 10);
+      const response: PostsResponse = await fetchPosts(pageNumber);
+      if (pageNumber === 1) {
+        setPosts(response.posts);
+      } else {
+        setPosts(prev => [...prev, ...response.posts]);
+      }
+      setHasMore(!!response.next_page);
     } catch (error) {
-      console.error('Erreur lors du chargement des tweets:', error);
+      console.error('Erreur lors du chargement des posts:', error);
     }
     setLoading(false);
-  }, [page, user]);
+  };
 
-  // Charger les tweets initiaux
   useEffect(() => {
     if (user) {
-      setTweets([]);
-      setPage(1);
-      loadMoreTweets();
+      loadPosts(1);
     }
   }, [user?.id]);
 
-  useEffect(() => {
-    loadMoreTweets();
-  }, [page]);
-
-  const handleTweetPublished = (newTweet: Tweet) => {
+  const handleTweetPublished = (newTweet: Post) => {
     if (!user) return;
-
-    // Ajouter le tweet à la liste globale
-    allTweets.unshift(newTweet);
-    setTweets(prev => [newTweet, ...prev]);
+    setPosts(prev => [newTweet, ...prev]);
   };
 
-  const handleLike = (tweetId: string) => {
-    if (!user) return;
+  const handleLike = (tweetId: number) => {
+    // TODO: Implémenter la fonctionnalité de like avec l'API
+    console.log('Like tweet:', tweetId);
+  };
 
-    // Mettre à jour les likes dans la liste globale
-    const tweetIndex = allTweets.findIndex(t => t.id === tweetId);
-    if (tweetIndex !== -1) {
-      allTweets[tweetIndex] = {
-        ...allTweets[tweetIndex],
-        likes: allTweets[tweetIndex].likes + 1
-      };
-    }
-
-    // Mettre à jour l'état local
-    setTweets(prev =>
-      prev.map(tweet =>
-        tweet.id === tweetId
-          ? { ...tweet, likes: tweet.likes + 1 }
-          : tweet
-      )
-    );
+  const handleLoadMore = () => {
+    const nextPage = page + 1;
+    setPage(nextPage);
+    loadPosts(nextPage);
   };
 
   if (!user) {
@@ -123,22 +102,23 @@ export default function Home() {
       <Publish onTweetPublished={handleTweetPublished} />
 
       <div className="divide-y divide-gray-200">
-        {tweets.map((tweet, index) => {
-          if (tweets.length === index + 1) {
-            return (
-              <div ref={lastTweetElementRef} key={tweet.id}>
-                <TweetCard tweet={tweet} onLike={handleLike} />
-              </div>
-            );
-          } else {
-            return (
-              <TweetCard key={tweet.id} tweet={tweet} onLike={handleLike} />
-            );
-          }
-        })}
+        {posts.map((post) => (
+          <TweetCard key={post.id} tweet={post} onLike={handleLike} />
+        ))}
         {loading && (
           <div className="p-4 text-center text-gray-500">
             Chargement...
+          </div>
+        )}
+        {hasMore && !loading && (
+          <div className="p-4 text-center">
+            <Button
+              variant="outline"
+              size="default"
+              onClick={handleLoadMore}
+            >
+              Afficher plus
+            </Button>
           </div>
         )}
       </div>

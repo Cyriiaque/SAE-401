@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import Button from '../ui/buttons';
 import { useNavigate } from 'react-router-dom';
-import { register, RegisterData } from '../lib/loaders';
+import { register } from '../lib/loaders';
 
 interface PasswordStrength {
   score: number;
