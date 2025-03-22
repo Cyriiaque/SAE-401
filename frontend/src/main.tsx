@@ -5,6 +5,7 @@ import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import SignIn from './routes/signin';
 import SignUp from './routes/signup';
 import Home from './routes/home';
+import Dashboard from './routes/dashboard';
 import { AuthProvider } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 
@@ -24,9 +25,9 @@ const router = createBrowserRouter([
     element: <SignUp />,
   },
   {
-    path: '/home',
-    element: <ProtectedRoute><Home /></ProtectedRoute>,
-  }
+    path: '/dashboard',
+    element: <ProtectedRoute><Dashboard /></ProtectedRoute>,
+  },
 ]);
 
 const rootElement = document.getElementById('root');

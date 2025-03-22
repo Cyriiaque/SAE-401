@@ -38,8 +38,8 @@ interface RegisterResponse {
 // Types pour les posts
 interface PostsResponse {
     posts: any[];
-    totalPages: number;
-    currentPage: number;
+    previous_page: number | null;
+    next_page: number | null;
 }
 
 // Fonctions d'authentification
@@ -144,4 +144,59 @@ export async function createPost(content: string): Promise<{ id: number }> {
     } catch (error) {
         throw error;
     }
+}
+
+export async function fetchUsers(): Promise<User[]> {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('Non authentifié');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/users`, {
+        headers: {
+            'Authorization': `Bearer ${token}`
+        }
+    });
+
+    if (!response.ok) {
+        if (response.status === 401) {
+            logout();
+            throw new Error('Session expirée');
+        }
+        if (response.status === 403) {
+            throw new Error('Vous n\'avez pas les droits pour accéder à ce contenu');
+        }
+        throw new Error('Erreur lors de la récupération des utilisateurs');
+    }
+
+    return response.json();
+}
+
+export async function updateUser(id: number, data: Partial<User>): Promise<User> {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('Non authentifié');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/users/${id}`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(data)
+    });
+
+    if (!response.ok) {
+        if (response.status === 401) {
+            logout();
+            throw new Error('Session expirée');
+        }
+        if (response.status === 403) {
+            throw new Error('Vous n\'avez pas les droits pour modifier cet utilisateur');
+        }
+        throw new Error('Erreur lors de la mise à jour de l\'utilisateur');
+    }
+
+    return response.json();
 }
