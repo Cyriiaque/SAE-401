@@ -49,7 +49,8 @@ class AuthController extends AbstractController
                 'email' => $user->getEmail(),
                 'name' => $user->getName(),
                 'mention' => $user->getMention(),
-                'avatar' => $user->getAvatar()
+                'avatar' => $user->getAvatar(),
+                'roles' => $user->getRoles()
             ]
         ]);
     }
@@ -107,7 +108,8 @@ class AuthController extends AbstractController
                     'id' => $user->getId(),
                     'email' => $user->getEmail(),
                     'name' => $user->getName(),
-                    'mention' => $user->getMention()
+                    'mention' => $user->getMention(),
+                    'roles' => $user->getRoles()
                 ]
             ], JsonResponse::HTTP_CREATED);
         } catch (\Exception $e) {

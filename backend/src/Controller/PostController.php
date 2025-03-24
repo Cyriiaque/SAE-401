@@ -27,7 +27,7 @@ class PostController extends AbstractController
         #[CurrentUser] $user
     ): Response {
         $page = max(1, $request->query->getInt('page', 1));
-        $limit = 2;
+        $limit = 3;
         $offset = ($page - 1) * $limit;
 
         $paginator = $postRepository->paginateAllOrderedByLatest();

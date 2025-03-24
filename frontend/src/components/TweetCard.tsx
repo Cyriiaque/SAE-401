@@ -1,6 +1,6 @@
 import { Tweet } from '../lib/loaders';
 import { useState, useEffect } from 'react';
-import { likePost, unlikePost, getLikeStatus } from '../lib/loaders';
+import { likePost, getLikeStatus } from '../lib/loaders';
 
 interface TweetCardProps {
   tweet: Tweet;
@@ -89,11 +89,10 @@ export default function TweetCard({ tweet }: TweetCardProps) {
           <div className="mt-3 flex items-center space-x-8">
             <button
               onClick={handleLike}
-              className={`flex items-center space-x-2 text-gray-500 hover:text-red-500 transition-colors ${isLiked ? 'text-red-500' : ''
-                }`}
+              className={`flex items-center space-x-2 transition-colors cursor-pointer group ${isLiked ? 'text-[#F05E1D]' : 'text-gray-500 hover:text-[#F05E1D]'}`}
             >
               <svg
-                className={`h-5 w-5 ${isLiked ? 'fill-current' : 'fill-none'
+                className={`h-5 w-5 ${isLiked ? 'fill-[#F05E1D] text-[#F05E1D]' : 'fill-none text-gray-500 group-hover:text-[#F05E1D]'
                   }`}
                 viewBox="0 0 24 24"
                 stroke="currentColor"
@@ -105,7 +104,7 @@ export default function TweetCard({ tweet }: TweetCardProps) {
                   d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
                 />
               </svg>
-              <span>{likes}</span>
+              <span className={isLiked ? 'text-[#F05E1D]' : 'text-gray-500 group-hover:text-[#F05E1D]'}>{likes}</span>
             </button>
           </div>
         </div>

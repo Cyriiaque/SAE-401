@@ -12,6 +12,7 @@ export interface User {
     avatar: string | null;
     banner: string | null;
     biography: string | null;
+    roles?: string[];
 }
 
 // Types pour l'authentification
@@ -92,6 +93,7 @@ export async function login(credentials: LoginCredentials): Promise<LoginRespons
     }
 
     const data = await response.json();
+
     if (data.token) {
         localStorage.setItem('token', data.token);
         localStorage.setItem('user', JSON.stringify(data.user));
@@ -107,7 +109,9 @@ export function logout(): void {
 // Fonctions utilitaires de session
 export function getCurrentUser(): User | null {
     const userStr = localStorage.getItem('user');
-    return userStr ? JSON.parse(userStr) : null;
+    if (!userStr) return null;
+
+    return JSON.parse(userStr);
 }
 
 export function isAuthenticated(): boolean {

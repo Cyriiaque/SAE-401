@@ -1,5 +1,5 @@
-import { createContext, useContext, useState, ReactNode } from 'react';
-import { User, login, logout, register } from '../lib/loaders';
+import { createContext, useContext, useState, ReactNode, useEffect } from 'react';
+import { User, login, logout, register, getCurrentUser } from '../lib/loaders';
 
 interface AuthContextType {
   user: User | null;
@@ -13,6 +13,13 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+
+  useEffect(() => {
+    const user = getCurrentUser();
+    if (user) {
+      setUser(user);
+    }
+  }, []);
 
   const handleLogin = async (email: string, password: string) => {
     const response = await login({ email, password });

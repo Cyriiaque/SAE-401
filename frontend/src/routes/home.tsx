@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import Button from '../ui/buttons';
 import Publish from '../components/Publish';
 import TweetCard from '../components/TweetCard';
+import Sidebar from '../components/Sidebar';
 import { fetchPosts, Tweet } from '../lib/loaders';
 
 interface PostsResponse {
@@ -13,7 +13,7 @@ interface PostsResponse {
 }
 
 export default function Home() {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [posts, setPosts] = useState<Tweet[]>([]);
   const [page, setPage] = useState(1);
@@ -61,57 +61,47 @@ export default function Home() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto">
-      <div className="border-b border-gray-200 sticky top-0 bg-white z-10">
-        <div className="flex justify-between items-center p-4">
-          <h1 className="text-xl font-bold">Accueil</h1>
-          <div className="flex items-center gap-4">
-            <Link to="/profile" className="text-gray-600 hover:text-blue-500">
-              @{user.mention}
-            </Link>
-            <Button
-              variant="outline"
-              size="default"
-              onClick={() => navigate('/profile')}
-            >
-              Profil
-            </Button>
-            <Button
-              variant="outline"
-              size="default"
-              onClick={() => {
-                logout();
-                navigate('/signin');
-              }}
-            >
-              Déconnexion
-            </Button>
+    <div className="flex min-h-screen bg-white">
+      <Sidebar />
+      <div className="flex-1 lg:ml-64">
+        <div className="max-w-2xl mx-auto">
+          {/* En-tête mobile */}
+          <div className="sticky top-0 bg-white z-10 border-b border-gray-200 lg:hidden">
+            <div className="p-4 flex items-center justify-center">
+              <h1 className="text-xl font-bold">Accueil</h1>
+            </div>
+          </div>
+
+          {/* En-tête desktop */}
+          <div className="hidden lg:block border-b border-gray-200 sticky top-0 bg-white z-10">
+            <div className="p-4">
+              <h1 className="text-xl font-bold">Accueil</h1>
+            </div>
+          </div>
+
+          <Publish onTweetPublished={handleTweetPublished} />
+
+          <div className="divide-y divide-gray-200">
+            {posts.map((post) => (
+              <TweetCard key={post.id} tweet={post} />
+            ))}
+            {loading && (
+              <div className="p-4 text-center text-gray-500">
+                Chargement...
+              </div>
+            )}
+            {hasMore && !loading && (
+              <div className="p-4 text-center">
+                <button
+                  className="text-[#F05E1D] hover:text-[#D84E1A]"
+                  onClick={handleLoadMore}
+                >
+                  Afficher plus
+                </button>
+              </div>
+            )}
           </div>
         </div>
-      </div>
-
-      <Publish onTweetPublished={handleTweetPublished} />
-
-      <div className="divide-y divide-gray-200">
-        {posts.map((post) => (
-          <TweetCard key={post.id} tweet={post} />
-        ))}
-        {loading && (
-          <div className="p-4 text-center text-gray-500">
-            Chargement...
-          </div>
-        )}
-        {hasMore && !loading && (
-          <div className="p-4 text-center">
-            <Button
-              variant="outline"
-              size="default"
-              onClick={handleLoadMore}
-            >
-              Afficher plus
-            </Button>
-          </div>
-        )}
       </div>
     </div>
   );
