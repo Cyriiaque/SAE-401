@@ -101,7 +101,20 @@ class PostController extends AbstractController
 
         $post = $postService->create($payload, $user);
 
-        return $this->json(['id' => $post->getId()], Response::HTTP_CREATED);
+        return $this->json([
+            'id' => $post->getId(),
+            'content' => $post->getContent(),
+            'created_at' => $post->getCreatedAt()->format('Y-m-d H:i:s'),
+            'likes' => 0,
+            'isLiked' => false,
+            'user' => [
+                'id' => $user->getId(),
+                'email' => $user->getEmail(),
+                'name' => $user->getName(),
+                'mention' => $user->getMention(),
+                'avatar' => $user->getAvatar()
+            ]
+        ], Response::HTTP_CREATED);
     }
 
     #[Route('/posts/{id}', name: 'posts.user', methods: ['GET'])]

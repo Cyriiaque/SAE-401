@@ -133,7 +133,7 @@ export async function fetchPosts(page: number): Promise<PostsResponse> {
     return response.json();
 }
 
-export async function createPost(content: string): Promise<{ id: number }> {
+export async function createPost(content: string): Promise<Tweet> {
     const token = localStorage.getItem('token');
     if (!token) {
         logout();

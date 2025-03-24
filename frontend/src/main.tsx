@@ -8,6 +8,7 @@ import Home from './routes/home';
 import Dashboard from './routes/dashboard';
 import Profile from './routes/profile';
 import { AuthProvider } from './contexts/AuthContext';
+import { PostModalProvider } from './contexts/PostModalContext';
 import ProtectedRoute from './components/ProtectedRoute';
 
 import './index.css';
@@ -41,7 +42,9 @@ if (rootElement) {
   ReactDOM.createRoot(rootElement).render(
     <React.StrictMode>
       <AuthProvider>
-        <RouterProvider router={router} />
+        <PostModalProvider onTweetPublished={() => { }}>
+          <RouterProvider router={router} />
+        </PostModalProvider>
       </AuthProvider>
     </React.StrictMode>,
   )

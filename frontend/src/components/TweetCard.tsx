@@ -28,11 +28,65 @@ function formatDate(dateString: string): string {
   }
 }
 
+function formatContent(content: string): string {
+  let maxLength;
+  if (window.innerWidth < 640) { // sm
+    maxLength = 30;
+  } else if (window.innerWidth < 768) { // md
+    maxLength = 50;
+  } else { // lg et plus
+    maxLength = 75;
+  }
+
+  const words = content.split(' ');
+  let currentLine = '';
+  let formattedContent = '';
+
+  for (let i = 0; i < words.length; i++) {
+    const word = words[i];
+    const space = i < words.length - 1 ? ' ' : '';
+
+    if ((currentLine + word + space).length > maxLength) {
+      if (currentLine) {
+        formattedContent += currentLine.trim() + '\n';
+      }
+      if (word.length > maxLength) {
+        // Si le mot est plus long que maxLength, on le coupe
+        let remainingWord = word;
+        while (remainingWord.length > 0) {
+          formattedContent += remainingWord.slice(0, maxLength) + '\n';
+          remainingWord = remainingWord.slice(maxLength);
+        }
+      } else {
+        currentLine = word + space;
+      }
+    } else {
+      currentLine += word + space;
+    }
+  }
+
+  if (currentLine) {
+    formattedContent += currentLine.trim();
+  }
+
+  return formattedContent;
+}
+
 export default function TweetCard({ tweet }: TweetCardProps) {
   const [isAvatarLoading, setIsAvatarLoading] = useState(true);
   const [avatarError, setAvatarError] = useState(false);
   const [likes, setLikes] = useState(tweet.likes);
   const [isLiked, setIsLiked] = useState(tweet.isLiked);
+  const [formattedContent, setFormattedContent] = useState(formatContent(tweet.content));
+
+  useEffect(() => {
+    const handleResize = () => {
+      setFormattedContent(formatContent(tweet.content));
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [tweet.content]);
 
   useEffect(() => {
     const checkLikeStatus = async () => {
@@ -77,23 +131,24 @@ export default function TweetCard({ tweet }: TweetCardProps) {
           )}
         </div>
         <div className="flex-1">
-          <div className="flex items-center space-x-2">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-2">
             <span className="font-bold">{tweet.user?.name}</span>
-            <span className="text-gray-500">@{tweet.user?.mention}</span>
-            <span className="text-gray-500">·</span>
-            <span className="text-gray-500">
-              {formatDate(tweet.created_at)}
-            </span>
+            <div className="flex items-center space-x-2 text-sm sm:text-base">
+              <span className="text-gray-500">@{tweet.user?.mention}</span>
+              <span className="hidden sm:inline text-gray-500">·</span>
+              <span className="text-gray-500">
+                {formatDate(tweet.created_at)}
+              </span>
+            </div>
           </div>
-          <p className="mt-2 text-gray-900">{tweet.content}</p>
+          <p className="mt-2 text-gray-900 whitespace-pre-line">{formattedContent}</p>
           <div className="mt-3 flex items-center space-x-8">
             <button
               onClick={handleLike}
               className={`flex items-center space-x-2 transition-colors cursor-pointer group ${isLiked ? 'text-[#F05E1D]' : 'text-gray-500 hover:text-[#F05E1D]'}`}
             >
               <svg
-                className={`h-5 w-5 ${isLiked ? 'fill-[#F05E1D] text-[#F05E1D]' : 'fill-none text-gray-500 group-hover:text-[#F05E1D]'
-                  }`}
+                className={`h-5 w-5 ${isLiked ? 'fill-[#F05E1D] text-[#F05E1D]' : 'fill-none text-gray-500 group-hover:text-[#F05E1D]'}`}
                 viewBox="0 0 24 24"
                 stroke="currentColor"
               >

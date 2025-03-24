@@ -1,10 +1,12 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { usePostModal } from '../contexts/PostModalContext';
 import Button from '../ui/buttons';
 import { useState } from 'react';
 
 export default function Sidebar() {
     const { user, logout } = useAuth();
+    const { openPostModal } = usePostModal();
     const location = useLocation();
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -29,14 +31,13 @@ export default function Sidebar() {
             {/* Overlay pour mobile */}
             {isMobileMenuOpen && (
                 <div
-                    className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
+                    className="fixed inset-0 bg-black/30 backdrop-blur-md z-40 lg:hidden"
                     onClick={toggleMobileMenu}
                 />
             )}
 
             {/* Sidebar */}
-            <div className={`fixed left-0 top-0 h-screen w-64 border-r border-gray-200 p-4 flex flex-col bg-white z-40 transform transition-transform duration-300 ease-in-out lg:translate-x-0 ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
-                }`}>
+            <div className={`fixed left-0 top-0 h-screen w-64 border-r border-gray-200 p-4 flex flex-col bg-white z-40 transform transition-transform duration-300 ease-in-out lg:translate-x-0 ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
                 {/* Logo */}
                 <div className="mb-8 pt-12">
                     <h1 className="text-2xl font-bold text-[#F05E1D]">Rettiwt</h1>
@@ -85,6 +86,19 @@ export default function Sidebar() {
                         )}
                     </ul>
                 </nav>
+
+                {/* Bouton Poster */}
+                <div className="p-4">
+                    <button
+                        onClick={openPostModal}
+                        className="w-full bg-[#F05E1D] text-white p-3 rounded-full hover:bg-[#D84E1A] flex items-center justify-center space-x-2"
+                    >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                        </svg>
+                        <span className="font-semibold">Poster</span>
+                    </button>
+                </div>
 
                 {/* Informations utilisateur et déconnexion */}
                 <div className="mt-auto space-y-4">

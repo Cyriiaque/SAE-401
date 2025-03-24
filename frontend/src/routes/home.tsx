@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import Publish from '../components/Publish';
+import { usePostModal } from '../contexts/PostModalContext';
 import TweetCard from '../components/TweetCard';
 import Sidebar from '../components/Sidebar';
 import { fetchPosts, Tweet } from '../lib/loaders';
@@ -44,10 +44,16 @@ export default function Home() {
     }
   }, [user?.id]);
 
-  const handleTweetPublished = (newTweet: Tweet) => {
-    if (!user) return;
-    setPosts(prev => [newTweet, ...prev]);
-  };
+  useEffect(() => {
+    const handleTweetPublished = (event: CustomEvent<Tweet>) => {
+      setPosts(prev => [event.detail, ...prev]);
+    };
+
+    window.addEventListener('tweetPublished', handleTweetPublished as EventListener);
+    return () => {
+      window.removeEventListener('tweetPublished', handleTweetPublished as EventListener);
+    };
+  }, []);
 
   const handleLoadMore = () => {
     const nextPage = page + 1;
@@ -78,8 +84,6 @@ export default function Home() {
               <h1 className="text-xl font-bold">Accueil</h1>
             </div>
           </div>
-
-          <Publish onTweetPublished={handleTweetPublished} />
 
           <div className="divide-y divide-gray-200">
             {posts.map((post) => (
