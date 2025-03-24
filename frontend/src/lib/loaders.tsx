@@ -10,6 +10,8 @@ export interface User {
     name: string | null;
     mention: string | null;
     avatar: string | null;
+    banner: string | null;
+    biography: string | null;
 }
 
 // Types pour l'authentification
@@ -36,8 +38,23 @@ interface RegisterResponse {
 }
 
 // Types pour les posts
+export interface Tweet {
+    id: number;
+    content: string;
+    created_at: string;
+    likes: number;
+    isLiked: boolean;
+    user: {
+        id: number;
+        email: string;
+        name: string;
+        mention: string;
+        avatar: string | null;
+    } | null;
+}
+
 interface PostsResponse {
-    posts: any[];
+    posts: Tweet[];
     previous_page: number | null;
     next_page: number | null;
 }
@@ -196,6 +213,101 @@ export async function updateUser(id: number, data: Partial<User>): Promise<User>
             throw new Error('Vous n\'avez pas les droits pour modifier cet utilisateur');
         }
         throw new Error('Erreur lors de la mise à jour de l\'utilisateur');
+    }
+
+    return response.json();
+}
+
+export async function likePost(postId: number): Promise<{ likes: number; isLiked: boolean }> {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('Non authentifié');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/posts/${postId}/like`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${token}`
+        }
+    });
+
+    if (!response.ok) {
+        if (response.status === 401) {
+            logout();
+            throw new Error('Session expirée');
+        }
+        throw new Error('Erreur lors du like');
+    }
+
+    return response.json();
+}
+
+export async function unlikePost(postId: number): Promise<{ likes: number }> {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('Non authentifié');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/posts/${postId}/unlike`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${token}`
+        }
+    });
+
+    if (!response.ok) {
+        if (response.status === 401) {
+            logout();
+            throw new Error('Session expirée');
+        }
+        throw new Error('Erreur lors du unlike');
+    }
+
+    return response.json();
+}
+
+export async function getLikeStatus(postId: number): Promise<{ likes: number; isLiked: boolean }> {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('Non authentifié');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/posts/${postId}/like-status`, {
+        method: 'GET',
+        headers: {
+            'Authorization': `Bearer ${token}`
+        }
+    });
+
+    if (!response.ok) {
+        if (response.status === 401) {
+            logout();
+            throw new Error('Session expirée');
+        }
+        throw new Error('Erreur lors de la récupération du statut du like');
+    }
+
+    return response.json();
+}
+
+export async function fetchUserPosts(userId: number): Promise<{ posts: Tweet[] }> {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('Non authentifié');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/posts/${userId}`, {
+        headers: {
+            'Authorization': `Bearer ${token}`
+        }
+    });
+
+    if (!response.ok) {
+        if (response.status === 401) {
+            logout();
+            throw new Error('Session expirée');
+        }
+        throw new Error('Erreur lors de la récupération des posts');
     }
 
     return response.json();

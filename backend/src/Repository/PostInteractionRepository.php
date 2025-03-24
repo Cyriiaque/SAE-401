@@ -2,43 +2,22 @@
 
 namespace App\Repository;
 
-use App\Entity\Post;
+use App\Entity\PostInteraction;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
-use Doctrine\ORM\Tools\Pagination\Paginator;
 use Doctrine\Persistence\ManagerRegistry;
 
 /**
- * @extends ServiceEntityRepository<Post>
+ * @extends ServiceEntityRepository<PostInteraction>
  */
-class PostRepository extends ServiceEntityRepository
+class PostInteractionRepository extends ServiceEntityRepository
 {
     public function __construct(ManagerRegistry $registry)
     {
-        parent::__construct($registry, Post::class);
-    }
-
-    public function paginateAllOrderedByLatest(): Paginator
-    {
-        $query = $this->createQueryBuilder('p')
-            ->orderBy('p.created_at', 'DESC')
-            ->setFirstResult(0)
-            ->setMaxResults(50)
-            ->getQuery();
-
-        return new Paginator($query);
-    }
-
-    public function save(Post $post, bool $flush = false): void
-    {
-        $this->getEntityManager()->persist($post);
-
-        if ($flush) {
-            $this->getEntityManager()->flush();
-        }
+        parent::__construct($registry, PostInteraction::class);
     }
 
     //    /**
-    //     * @return Post[] Returns an array of Post objects
+    //     * @return PostInteraction[] Returns an array of PostInteraction objects
     //     */
     //    public function findByExampleField($value): array
     //    {
@@ -52,7 +31,7 @@ class PostRepository extends ServiceEntityRepository
     //        ;
     //    }
 
-    //    public function findOneBySomeField($value): ?Post
+    //    public function findOneBySomeField($value): ?PostInteraction
     //    {
     //        return $this->createQueryBuilder('p')
     //            ->andWhere('p.exampleField = :val')

@@ -3,12 +3,12 @@
 namespace App\Controller;
 
 use App\Repository\PostRepository;
+use App\Repository\PostInteractionRepository;
 use Doctrine\ORM\Tools\Pagination\Paginator;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Annotation\Route;
-use Symfony\Component\Security\Http\Authentication\AuthenticationUtils;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 use Symfony\Component\Serializer\SerializerInterface;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
@@ -20,8 +20,12 @@ use Symfony\Component\Security\Http\Attribute\CurrentUser;
 class PostController extends AbstractController
 {
     #[Route('/posts', name: 'posts.index', methods: ['GET'])]
-    public function index(Request $request, PostRepository $postRepository): Response
-    {
+    public function index(
+        Request $request,
+        PostRepository $postRepository,
+        PostInteractionRepository $interactionRepository,
+        #[CurrentUser] $user
+    ): Response {
         $page = max(1, $request->query->getInt('page', 1));
         $limit = 2;
         $offset = ($page - 1) * $limit;
@@ -38,17 +42,29 @@ class PostController extends AbstractController
         $count = 0;
         foreach ($paginator as $post) {
             if ($count >= $offset && $count < ($offset + $limit)) {
-                $user = $post->getIdUser();
+                $userPost = $post->getIdUser();
+
+                // Récupérer l'interaction de l'utilisateur avec ce post
+                $interaction = $interactionRepository->findOneBy([
+                    'user' => $user,
+                    'post' => $post
+                ]);
+
+                // Compter le nombre total de likes pour ce post
+                $totalLikes = $interactionRepository->count(['post' => $post, 'liked' => true]);
+
                 $posts[] = [
                     'id' => $post->getId(),
                     'content' => $post->getContent(),
                     'created_at' => $post->getCreatedAt()->format('Y-m-d H:i:s'),
-                    'user' => $user ? [
-                        'id' => $user->getId(),
-                        'email' => $user->getEmail(),
-                        'name' => $user->getName(),
-                        'mention' => $user->getMention(),
-                        'avatar' => $user->getAvatar()
+                    'likes' => $totalLikes,
+                    'isLiked' => $interaction ? $interaction->isLiked() : false,
+                    'user' => $userPost ? [
+                        'id' => $userPost->getId(),
+                        'email' => $userPost->getEmail(),
+                        'name' => $userPost->getName(),
+                        'mention' => $userPost->getMention(),
+                        'avatar' => $userPost->getAvatar()
                     ] : null
                 ];
             }
@@ -86,5 +102,50 @@ class PostController extends AbstractController
         $post = $postService->create($payload, $user);
 
         return $this->json(['id' => $post->getId()], Response::HTTP_CREATED);
+    }
+
+    #[Route('/posts/{id}', name: 'posts.user', methods: ['GET'])]
+    public function getUserPosts(
+        int $id,
+        PostRepository $postRepository,
+        PostInteractionRepository $interactionRepository,
+        #[CurrentUser] $user
+    ): Response {
+        $posts = [];
+        $paginator = $postRepository->paginateAllOrderedByLatest();
+
+        foreach ($paginator as $post) {
+            if ($post->getIdUser()->getId() === $id) {
+                $userPost = $post->getIdUser();
+
+                // Récupérer l'interaction de l'utilisateur avec ce post
+                $interaction = $interactionRepository->findOneBy([
+                    'user' => $user,
+                    'post' => $post
+                ]);
+
+                // Compter le nombre total de likes pour ce post
+                $totalLikes = $interactionRepository->count(['post' => $post, 'liked' => true]);
+
+                $posts[] = [
+                    'id' => $post->getId(),
+                    'content' => $post->getContent(),
+                    'created_at' => $post->getCreatedAt()->format('Y-m-d H:i:s'),
+                    'likes' => $totalLikes,
+                    'isLiked' => $interaction ? $interaction->isLiked() : false,
+                    'user' => $userPost ? [
+                        'id' => $userPost->getId(),
+                        'email' => $userPost->getEmail(),
+                        'name' => $userPost->getName(),
+                        'mention' => $userPost->getMention(),
+                        'avatar' => $userPost->getAvatar()
+                    ] : null
+                ];
+            }
+        }
+
+        return $this->json([
+            'posts' => $posts
+        ]);
     }
 }

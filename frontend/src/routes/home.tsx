@@ -1,26 +1,13 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import Button from '../ui/buttons';
 import Publish from '../components/Publish';
 import TweetCard from '../components/TweetCard';
-import { fetchPosts } from '../lib/loaders';
-
-interface Post {
-  id: number;
-  content: string;
-  created_at: string;
-  user: {
-    id: number;
-    email: string;
-    name: string;
-    mention: string;
-    avatar: string | null;
-  };
-}
+import { fetchPosts, Tweet } from '../lib/loaders';
 
 interface PostsResponse {
-  posts: Post[];
+  posts: Tweet[];
   previous_page: number | null;
   next_page: number | null;
 }
@@ -28,7 +15,7 @@ interface PostsResponse {
 export default function Home() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const [posts, setPosts] = useState<Post[]>([]);
+  const [posts, setPosts] = useState<Tweet[]>([]);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
@@ -57,14 +44,9 @@ export default function Home() {
     }
   }, [user?.id]);
 
-  const handleTweetPublished = (newTweet: Post) => {
+  const handleTweetPublished = (newTweet: Tweet) => {
     if (!user) return;
     setPosts(prev => [newTweet, ...prev]);
-  };
-
-  const handleLike = (tweetId: number) => {
-    // TODO: Implémenter la fonctionnalité de like avec l'API
-    console.log('Like tweet:', tweetId);
   };
 
   const handleLoadMore = () => {
@@ -84,7 +66,16 @@ export default function Home() {
         <div className="flex justify-between items-center p-4">
           <h1 className="text-xl font-bold">Accueil</h1>
           <div className="flex items-center gap-4">
-            <span className="text-gray-600">@{user.mention}</span>
+            <Link to="/profile" className="text-gray-600 hover:text-blue-500">
+              @{user.mention}
+            </Link>
+            <Button
+              variant="outline"
+              size="default"
+              onClick={() => navigate('/profile')}
+            >
+              Profil
+            </Button>
             <Button
               variant="outline"
               size="default"
@@ -103,7 +94,7 @@ export default function Home() {
 
       <div className="divide-y divide-gray-200">
         {posts.map((post) => (
-          <TweetCard key={post.id} tweet={post} onLike={handleLike} />
+          <TweetCard key={post.id} tweet={post} />
         ))}
         {loading && (
           <div className="p-4 text-center text-gray-500">

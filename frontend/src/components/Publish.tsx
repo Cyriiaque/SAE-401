@@ -1,23 +1,10 @@
 import { useState } from 'react';
 import Button from '../ui/buttons';
 import { useAuth } from '../contexts/AuthContext';
-import { createPost } from '../lib/loaders';
+import { createPost, Tweet } from '../lib/loaders';
 
 interface PublishProps {
   onTweetPublished: (tweet: Tweet) => void;
-}
-
-export interface Tweet {
-  id: number;
-  content: string;
-  created_at: string;
-  user: {
-    id: number;
-    email: string;
-    name: string;
-    mention: string;
-    avatar: string | null;
-  };
 }
 
 export default function Publish({ onTweetPublished }: PublishProps) {
@@ -40,6 +27,8 @@ export default function Publish({ onTweetPublished }: PublishProps) {
           id: result.id,
           content: newTweet,
           created_at: new Date().toISOString(),
+          likes: 0,
+          isLiked: false,
           user: {
             id: user.id,
             email: user.email,
