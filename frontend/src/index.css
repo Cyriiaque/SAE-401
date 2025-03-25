@@ -1,20 +1,67 @@
 @import 'tailwindcss';
 
-@theme {
-  --color-white: white;
-  --color-black: black;
+@layer theme {
+  :root {
+    --color-white: white;
+    --color-black: black;
+    --color-orange: #F05E1D;
+    --color-dark-orange: #D84E1A;
+    --color-light-orange: #F05E1D/10;
+    
+    --color-light: var(--color-white);
+    --color-dark: var(--color-black);
+  }
+}
 
-  --color-light: var(--color-white);
-  --color-dark: var(--color-black);
+@layer utilities {
+  .text-orange {
+    color: var(--color-orange);
+  }
+  
+  .bg-orange {
+    background-color: var(--color-orange);
+  }
+  
+  .border-orange {
+    border-color: var(--color-orange);
+  }
+  
+  .hover\:bg-orange:hover {
+    background-color: var(--color-orange);
+  }
+  
+  .hover\:text-orange:hover {
+    color: var(--color-orange);
+  }
+  
+  .hover\:border-orange:hover {
+    border-color: var(--color-orange);
+  }
+  
+  .bg-dark-orange {
+    background-color: var(--color-dark-orange);
+  }
+  
+  .hover\:bg-dark-orange:hover {
+    background-color: var(--color-dark-orange);
+  }
+  
+  .bg-light-orange {
+    background-color: var(--color-light-orange);
+  }
+  
+  .hover\:bg-light-orange:hover {
+    background-color: var(--color-light-orange);
+  }
 }
 
 @layer {
   .dark {
-    --color-foreground: var(--color-light);
-    --color-background: var(--color-dark);
+    --color-foreground: var(--color-white);
+    --color-background: var(--color-black);
   }
   .light {
-    --color-foreground: var(--color-dark);
-    --color-background: var(--color-light);
+    --color-foreground: var(--color-black);
+    --color-background: var(--color-white);
   }
 }

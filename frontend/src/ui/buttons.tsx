@@ -7,8 +7,8 @@ const buttonVariants = cva("rounded-full font-bold focus:outline-none transition
       default:
         "bg-black text-white hover:bg-gray-900 focus:bg-gray-900 disabled:hover:bg-black",
       outline:
-        "border-2 border-gray-100 text-black hover:bg-gray-50 disabled:hover:bg-transparent",
-      rettiwt:
+        "border border-[#F05E1D] text-[#F05E1D] hover:bg-[#F05E1D]/10 disabled:hover:bg-transparent",
+      full:
         "bg-[#F05E1D] text-white hover:bg-[#F05E1D]/90",
     },
     size: {
@@ -27,7 +27,7 @@ const buttonVariants = cva("rounded-full font-bold focus:outline-none transition
 // Interface simplifiée avec uniquement les props nécessaires
 
 interface ButtonPropsCVA {
-  variant?: "default" | "outline" | "rettiwt";
+  variant?: "default" | "outline" | "full";
   size?: "default" | "sm" | "lg" | "xl";
   className?: string;
 }

@@ -54,7 +54,7 @@ export default function PostModal({ isOpen, onClose, onTweetPublished }: PostMod
                         placeholder="Qu'avez-vous à dire ?"
                         className={`w-full p-3 border rounded-lg resize-none focus:outline-none focus:ring-2 ${content.length > maxLength
                             ? 'border-red-500 focus:ring-red-500'
-                            : 'border-gray-300 focus:ring-[#F05E1D]'
+                            : 'border-gray-300 focus:ring-orange'
                             }`}
                         rows={4}
                         maxLength={maxLength}
@@ -66,7 +66,7 @@ export default function PostModal({ isOpen, onClose, onTweetPublished }: PostMod
                         <button
                             type="submit"
                             disabled={!content.trim() || content.length > maxLength || isSubmitting}
-                            className="bg-[#F05E1D] text-white px-6 py-2 rounded-full font-semibold hover:bg-[#D84E1A] disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="bg-orange text-white px-6 py-2 rounded-full font-semibold hover:bg-dark-orange disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             {isSubmitting ? 'Publication...' : 'Publier'}
                         </button>

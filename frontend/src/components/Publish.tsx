@@ -77,10 +77,11 @@ export default function Publish({ onTweetPublished }: PublishProps) {
             </span>
           )}
           <Button
-            variant="rettiwt"
+            variant="full"
             size="lg"
-            disabled={!newTweet.trim() || newTweet.length > maxLength || isSubmitting}
+            className="w-full"
             type="submit"
+            disabled={isSubmitting}
           >
             {isSubmitting ? 'Publication...' : 'Publier'}
           </Button>

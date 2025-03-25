@@ -33,6 +33,7 @@ export default function SignUp() {
     },
   });
   const [emailError, setEmailError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const checkPasswordStrength = (value: string) => {
     const requirements = {
@@ -75,6 +76,7 @@ export default function SignUp() {
     if (!isFormValid()) return;
 
     try {
+      setIsSubmitting(true);
       await register({
         email,
         password,
@@ -84,6 +86,8 @@ export default function SignUp() {
       navigate('/signin');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Une erreur est survenue');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -232,13 +236,13 @@ export default function SignUp() {
 
           <div>
             <Button
-              variant="rettiwt"
+              variant="full"
               size="lg"
               className="w-full"
-              disabled={!isFormValid()}
               type="submit"
+              disabled={isSubmitting}
             >
-              S'inscrire
+              {isSubmitting ? 'Inscription...' : 'S\'inscrire'}
             </Button>
           </div>
 

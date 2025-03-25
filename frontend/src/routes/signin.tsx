@@ -9,15 +9,19 @@ export default function SignIn() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setIsSubmitting(true);
     try {
       await login(email, password);
       navigate('/');
     } catch (err) {
       setError('Email ou mot de passe incorrect');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -64,8 +68,8 @@ export default function SignIn() {
           </div>
 
           <div>
-            <Button variant="rettiwt" size="lg" className="w-full" type="submit">
-              Se connecter
+            <Button variant="full" size="lg" className="w-full" type="submit">
+              {isSubmitting ? 'Connexion...' : 'Se connecter'}
             </Button>
           </div>
 
