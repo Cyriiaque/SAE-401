@@ -4,6 +4,8 @@ import { useNavigate } from 'react-router-dom';
 import Button from '../ui/buttons';
 import { useAuth } from '../contexts/AuthContext';
 import Sidebar from '../components/Sidebar';
+import EditUserModal from '../components/EditUserModal';
+import ConfirmModal from '../components/ConfirmModal';
 
 export default function Dashboard() {
     const [users, setUsers] = useState<User[]>([]);
@@ -12,6 +14,8 @@ export default function Dashboard() {
     const [editingUser, setEditingUser] = useState<User | null>(null);
     const { user } = useAuth();
     const navigate = useNavigate();
+    const [confirmBanModalOpen, setConfirmBanModalOpen] = useState(false);
+    const [userToBan, setUserToBan] = useState<User | null>(null);
 
     useEffect(() => {
         const loadUsers = async () => {
@@ -38,22 +42,53 @@ export default function Dashboard() {
         setEditingUser(user);
     };
 
-    const handleSave = async () => {
-        if (!editingUser) return;
-
+    const handleSave = async (updatedUser: User) => {
         try {
-            const updatedUser = await updateUser(editingUser.id, editingUser);
+            const savedUser = await updateUser(updatedUser.id, updatedUser);
             setUsers(users.map(user =>
-                user.id === updatedUser.id ? updatedUser : user
+                user.id === savedUser.id ? savedUser : user
             ));
-            setEditingUser(null);
+            localStorage.setItem('user', JSON.stringify(savedUser));
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Une erreur est survenue');
         }
     };
 
-    const handleCancel = () => {
-        setEditingUser(null);
+    const handleBan = async (user: User) => {
+        setUserToBan(user);
+        setConfirmBanModalOpen(true);
+    };
+
+    const confirmBan = async () => {
+        if (!userToBan) return;
+
+        try {
+            const updatedUsers = users.map(u =>
+                u.id === userToBan.id
+                    ? { ...u, isbanned: !u.isbanned }
+                    : u
+            );
+            setUsers(updatedUsers);
+
+            const response = await fetch(`http://localhost:8080/users/${userToBan.id}/ban`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                },
+            });
+
+            if (!response.ok) {
+                // Revert local state if API call fails
+                setUsers(users);
+                setError('Erreur lors du changement de statut de ban');
+            }
+        } catch (error) {
+            setUsers(users);
+            setError('Erreur de réseau');
+        } finally {
+            setUserToBan(null);
+        }
     };
 
     return (
@@ -86,7 +121,7 @@ export default function Dashboard() {
                             {/* Version mobile et tablette */}
                             <div className="lg:hidden flex flex-col items-center space-y-6">
                                 {users.map((user) => (
-                                    <div key={user.id} className="bg-white rounded-lg shadow p-6 border border-[#F05E1D] w-full max-w-md">
+                                    <div key={user.id} className={`bg-white rounded-lg shadow p-6 border ${user.isbanned ? 'border-red-500' : 'border-[#F05E1D]'} w-full max-w-md`}>
                                         <div className="flex items-center space-x-4">
                                             <img
                                                 src={user.avatar || '/default_pp.webp'}
@@ -94,65 +129,40 @@ export default function Dashboard() {
                                                 className="h-16 w-16 rounded-full object-cover"
                                             />
                                             <div className="flex-1">
-                                                {editingUser?.id === user.id ? (
-                                                    <>
-                                                        <input
-                                                            type="text"
-                                                            value={editingUser.name || ''}
-                                                            onChange={(e) => setEditingUser({ ...editingUser, name: e.target.value })}
-                                                            className="w-full p-2 border rounded mb-2"
-                                                            placeholder="Nom"
-                                                        />
-                                                        <input
-                                                            type="text"
-                                                            value={editingUser.mention || ''}
-                                                            onChange={(e) => setEditingUser({ ...editingUser, mention: e.target.value })}
-                                                            className="w-full p-2 border rounded mb-2"
-                                                            placeholder="Mention"
-                                                        />
-                                                        <input
-                                                            type="email"
-                                                            value={editingUser.email || ''}
-                                                            onChange={(e) => setEditingUser({ ...editingUser, email: e.target.value })}
-                                                            className="w-full p-2 border rounded"
-                                                            placeholder="Email"
-                                                        />
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <h2 className="text-lg font-semibold">{user.name}</h2>
-                                                        <p className="text-gray-500">@{user.mention}</p>
-                                                        <p className="text-sm text-gray-500">{user.email}</p>
-                                                    </>
+                                                <h2 className="text-lg font-semibold">{user.name}</h2>
+                                                <p className="text-gray-500">@{user.mention}</p>
+                                                <p className="text-sm text-gray-500">{user.email}</p>
+                                                {user.isbanned && (
+                                                    <span className="text-red-500 text-sm font-bold">Banni</span>
                                                 )}
                                             </div>
                                         </div>
                                         <div className="mt-4 flex justify-start space-x-2">
-                                            {editingUser?.id === user.id ? (
-                                                <>
-                                                    <Button
-                                                        variant="outline"
-                                                        size="sm"
-                                                        onClick={handleSave}
-                                                    >
-                                                        Sauvegarder
-                                                    </Button>
-                                                    <Button
-                                                        variant="outline"
-                                                        size="sm"
-                                                        onClick={handleCancel}
-                                                    >
-                                                        Annuler
-                                                    </Button>
-                                                </>
-                                            ) : (
-                                                <Button
-                                                    variant="outline"
-                                                    size="sm"
-                                                    onClick={() => handleEdit(user)}
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => handleEdit(user)}
+                                            >
+                                                Modifier
+                                            </Button>
+                                            {!(user.roles ?? []).includes('ROLE_ADMIN') && (
+                                                <button
+                                                    onClick={() => handleBan(user)}
+                                                    className="text-red-500 hover:text-red-700 cursor-pointer"
+                                                    title={user.isbanned ? 'Dé-bannir' : 'Bannir'}
                                                 >
-                                                    Modifier
-                                                </Button>
+                                                    {user.isbanned ? (
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                            <circle cx="12" cy="12" r="10" fill="red" fillOpacity="0.2" />
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" stroke="red" />
+                                                        </svg>
+                                                    ) : (
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                            <circle cx="12" cy="12" r="10" fill="green" fillOpacity="0.2" />
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" stroke="green" />
+                                                        </svg>
+                                                    )}
+                                                </button>
                                             )}
                                         </div>
                                     </div>
@@ -169,49 +179,17 @@ export default function Dashboard() {
                                             <th className="px-8 py-4 text-left text-sm font-semibold text-gray-700">Nom</th>
                                             <th className="px-8 py-4 text-left text-sm font-semibold text-gray-700">Mention</th>
                                             <th className="px-8 py-4 text-left text-sm font-semibold text-gray-700">Avatar</th>
+                                            <th className="px-8 py-4 text-left text-sm font-semibold text-gray-700">Statut</th>
                                             <th className="px-8 py-4 text-left text-sm font-semibold text-gray-700">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-200">
                                         {users.map((user) => (
-                                            <tr key={user.id} className="hover:bg-gray-50">
+                                            <tr key={user.id} className={`hover:bg-gray-50 ${user.isbanned ? 'bg-red-50' : ''}`}>
                                                 <td className="px-8 py-4 text-sm text-gray-900">{user.id}</td>
-                                                <td className="px-8 py-4 text-sm text-gray-900">
-                                                    {editingUser?.id === user.id ? (
-                                                        <input
-                                                            type="email"
-                                                            value={editingUser.email || ''}
-                                                            onChange={(e) => setEditingUser({ ...editingUser, email: e.target.value })}
-                                                            className="w-full p-2 border rounded"
-                                                        />
-                                                    ) : (
-                                                        user.email
-                                                    )}
-                                                </td>
-                                                <td className="px-8 py-4 text-sm text-gray-900">
-                                                    {editingUser?.id === user.id ? (
-                                                        <input
-                                                            type="text"
-                                                            value={editingUser.name || ''}
-                                                            onChange={(e) => setEditingUser({ ...editingUser, name: e.target.value })}
-                                                            className="w-full p-2 border rounded"
-                                                        />
-                                                    ) : (
-                                                        user.name
-                                                    )}
-                                                </td>
-                                                <td className="px-8 py-4 text-sm text-gray-900">
-                                                    {editingUser?.id === user.id ? (
-                                                        <input
-                                                            type="text"
-                                                            value={editingUser.mention || ''}
-                                                            onChange={(e) => setEditingUser({ ...editingUser, mention: e.target.value })}
-                                                            className="w-full p-2 border rounded"
-                                                        />
-                                                    ) : (
-                                                        `@${user.mention}`
-                                                    )}
-                                                </td>
+                                                <td className="px-8 py-4 text-sm text-gray-900">{user.email}</td>
+                                                <td className="px-8 py-4 text-sm text-gray-900">{user.name}</td>
+                                                <td className="px-8 py-4 text-sm text-gray-900">@{user.mention}</td>
                                                 <td className="px-8 py-4">
                                                     <img
                                                         src={user.avatar || '/default_pp.webp'}
@@ -220,31 +198,38 @@ export default function Dashboard() {
                                                     />
                                                 </td>
                                                 <td className="px-8 py-4">
-                                                    {editingUser?.id === user.id ? (
-                                                        <div className="flex space-x-2">
-                                                            <Button
-                                                                variant="outline"
-                                                                size="sm"
-                                                                onClick={handleSave}
-                                                            >
-                                                                Sauvegarder
-                                                            </Button>
-                                                            <Button
-                                                                variant="outline"
-                                                                size="sm"
-                                                                onClick={handleCancel}
-                                                            >
-                                                                Annuler
-                                                            </Button>
-                                                        </div>
+                                                    {user.isbanned ? (
+                                                        <span className="text-red-500 font-bold">Banni</span>
                                                     ) : (
-                                                        <Button
-                                                            variant="outline"
-                                                            size="sm"
-                                                            onClick={() => handleEdit(user)}
+                                                        <span className="text-green-500">Actif</span>
+                                                    )}
+                                                </td>
+                                                <td className="px-8 py-4 flex space-x-2">
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        onClick={() => handleEdit(user)}
+                                                    >
+                                                        Modifier
+                                                    </Button>
+                                                    {!(user.roles ?? []).includes('ROLE_ADMIN') && (
+                                                        <button
+                                                            onClick={() => handleBan(user)}
+                                                            className="text-red-500 hover:text-red-700"
+                                                            title={user.isbanned ? 'Dé-bannir' : 'Bannir'}
                                                         >
-                                                            Modifier
-                                                        </Button>
+                                                            {user.isbanned ? (
+                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                    <circle cx="12" cy="12" r="10" fill="red" fillOpacity="0.2" />
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" stroke="red" />
+                                                                </svg>
+                                                            ) : (
+                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                    <circle cx="12" cy="12" r="10" fill="green" fillOpacity="0.2" />
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" stroke="green" />
+                                                                </svg>
+                                                            )}
+                                                        </button>
                                                     )}
                                                 </td>
                                             </tr>
@@ -256,6 +241,25 @@ export default function Dashboard() {
                     )}
                 </div>
             </div>
+
+            {editingUser && (
+                <EditUserModal
+                    user={editingUser}
+                    isOpen={!!editingUser}
+                    onClose={() => setEditingUser(null)}
+                    onSave={handleSave}
+                />
+            )}
+
+            <ConfirmModal
+                isOpen={confirmBanModalOpen}
+                onClose={() => setConfirmBanModalOpen(false)}
+                onConfirm={confirmBan}
+                title={`${userToBan?.isbanned ? 'Débannir' : 'Bannir'} l'utilisateur`}
+                message={`Êtes-vous sûr de vouloir ${userToBan?.isbanned ? 'débannir' : 'bannir'} cet utilisateur ?`}
+                confirmText={userToBan?.isbanned ? 'Débannir' : 'Bannir'}
+                variant="full"
+            />
         </div>
     );
 }

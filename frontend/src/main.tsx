@@ -7,6 +7,7 @@ import SignUp from './routes/signup';
 import Home from './routes/home';
 import Dashboard from './routes/dashboard';
 import Profile from './routes/profile';
+import Settings from './routes/Settings';
 import { AuthProvider } from './contexts/AuthContext';
 import { PostModalProvider } from './contexts/PostModalContext';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -33,6 +34,10 @@ const router = createBrowserRouter([
   {
     path: '/profile',
     element: <ProtectedRoute><Profile /></ProtectedRoute>,
+  },
+  {
+    path: '/settings',
+    element: <ProtectedRoute><Settings /></ProtectedRoute>,
   },
 ]);
 

@@ -53,6 +53,18 @@
   .hover\:bg-light-orange:hover {
     background-color: var(--color-light-orange);
   }
+
+  .fill-orange {
+    fill: var(--color-orange);
+  }
+
+  .group:hover .group-hover\:fill-orange {
+    fill: var(--color-orange);
+  }
+
+  .group:hover .group-hover\:stroke-orange {
+    stroke: var(--color-orange);
+  }
 }
 
 @layer {

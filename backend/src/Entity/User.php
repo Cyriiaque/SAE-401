@@ -58,6 +58,15 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     #[ORM\Column(type: Types::TEXT, nullable: true)]
     private ?string $banner = null;
 
+    #[ORM\Column]
+    private ?bool $isverified = null;
+
+    #[ORM\Column(type: 'integer', options: ['default' => 0])]
+    private ?int $post_reload = 0;
+
+    #[ORM\Column(type: 'boolean', options: ['default' => false])]
+    private ?bool $isbanned = false;
+
     public function getId(): ?int
     {
         return $this->id;
@@ -201,6 +210,42 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     public function setBanner(?string $banner): static
     {
         $this->banner = $banner;
+
+        return $this;
+    }
+
+    public function isverified(): ?bool
+    {
+        return $this->isverified;
+    }
+
+    public function setIsverified(bool $isverified): static
+    {
+        $this->isverified = $isverified;
+
+        return $this;
+    }
+
+    public function getPostReload(): ?int
+    {
+        return $this->post_reload;
+    }
+
+    public function setPostReload(int $post_reload): static
+    {
+        $this->post_reload = $post_reload;
+
+        return $this;
+    }
+
+    public function isbanned(): ?bool
+    {
+        return $this->isbanned;
+    }
+
+    public function setIsbanned(bool $isbanned): static
+    {
+        $this->isbanned = $isbanned;
 
         return $this;
     }

@@ -16,6 +16,7 @@ use App\Service\PostService;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use App\Request\CreatePostRequest;
 use Symfony\Component\Security\Http\Attribute\CurrentUser;
+use Doctrine\ORM\EntityManagerInterface;
 
 class PostController extends AbstractController
 {
@@ -27,7 +28,7 @@ class PostController extends AbstractController
         #[CurrentUser] $user
     ): Response {
         $page = max(1, $request->query->getInt('page', 1));
-        $limit = 3;
+        $limit = 5;
         $offset = ($page - 1) * $limit;
 
         $paginator = $postRepository->paginateAllOrderedByLatest();
@@ -64,7 +65,8 @@ class PostController extends AbstractController
                         'email' => $userPost->getEmail(),
                         'name' => $userPost->getName(),
                         'mention' => $userPost->getMention(),
-                        'avatar' => $userPost->getAvatar()
+                        'avatar' => $userPost->getAvatar(),
+                        'isbanned' => $userPost->isbanned()
                     ] : null
                 ];
             }
@@ -80,7 +82,7 @@ class PostController extends AbstractController
 
     #[Route('/addpost', name: 'posts.create', methods: ['POST'], format: 'json')]
     #[IsGranted('ROLE_USER')]
-    public function createPost(
+    public function create(
         Request $request,
         SerializerInterface $serializer,
         ValidatorInterface $validator,
@@ -117,8 +119,8 @@ class PostController extends AbstractController
         ], Response::HTTP_CREATED);
     }
 
-    #[Route('/posts/{id}', name: 'posts.user', methods: ['GET'])]
-    public function getUserPosts(
+    #[Route('/posts/{id}', name: 'posts.get', methods: ['GET'])]
+    public function get(
         int $id,
         PostRepository $postRepository,
         PostInteractionRepository $interactionRepository,
@@ -160,5 +162,38 @@ class PostController extends AbstractController
         return $this->json([
             'posts' => $posts
         ]);
+    }
+
+    #[Route('/posts/{id}', name: 'posts.delete', methods: ['DELETE'])]
+    #[IsGranted('ROLE_USER')]
+    public function delete(
+        int $id,
+        PostRepository $postRepository,
+        PostInteractionRepository $interactionRepository,
+        EntityManagerInterface $entityManager,
+        #[CurrentUser] $user
+    ): JsonResponse {
+        $post = $postRepository->find($id);
+
+        if (!$post) {
+            return $this->json(['message' => 'Post non trouvé'], Response::HTTP_NOT_FOUND);
+        }
+
+        // Vérifier si l'utilisateur est le propriétaire du post
+        if ($post->getIdUser()->getId() !== $user->getId()) {
+            return $this->json(['message' => 'Vous n\'êtes pas autorisé à supprimer ce post'], Response::HTTP_FORBIDDEN);
+        }
+
+        // Supprimer d'abord toutes les interactions associées au post
+        $interactions = $interactionRepository->findBy(['post' => $post]);
+        foreach ($interactions as $interaction) {
+            $entityManager->remove($interaction);
+        }
+
+        // Supprimer le post
+        $entityManager->remove($post);
+        $entityManager->flush();
+
+        return $this->json(['message' => 'Post supprimé avec succès']);
     }
 }

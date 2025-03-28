@@ -17,7 +17,7 @@ class PostInteractionController extends AbstractController
 {
     #[Route('/posts/{id}/like', name: 'posts.like', methods: ['POST'])]
     #[IsGranted('ROLE_USER')]
-    public function toggleLike(
+    public function create(
         int $id,
         PostRepository $postRepository,
         PostInteractionRepository $interactionRepository,
@@ -61,7 +61,7 @@ class PostInteractionController extends AbstractController
 
     #[Route('/posts/{id}/like-status', name: 'posts.like_status', methods: ['GET'])]
     #[IsGranted('ROLE_USER')]
-    public function getLikeStatus(
+    public function get(
         int $id,
         PostRepository $postRepository,
         PostInteractionRepository $interactionRepository,

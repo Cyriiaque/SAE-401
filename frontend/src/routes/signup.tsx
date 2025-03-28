@@ -83,7 +83,7 @@ export default function SignUp() {
         name: fullName,
         mention: username
       });
-      navigate('/signin');
+      navigate('/signin?registered=true');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Une erreur est survenue');
     } finally {

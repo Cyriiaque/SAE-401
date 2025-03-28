@@ -13,6 +13,9 @@ export interface User {
     banner: string | null;
     biography: string | null;
     roles?: string[];
+    isVerified: boolean;
+    postReload: number;
+    isbanned: boolean;
 }
 
 // Types pour l'authentification
@@ -51,6 +54,7 @@ export interface Tweet {
         name: string;
         mention: string;
         avatar: string | null;
+        isbanned?: boolean;
     } | null;
 }
 
@@ -312,6 +316,103 @@ export async function fetchUserPosts(userId: number): Promise<{ posts: Tweet[] }
             throw new Error('Session expirée');
         }
         throw new Error('Erreur lors de la récupération des posts');
+    }
+
+    return response.json();
+}
+
+export async function deletePost(postId: number): Promise<void> {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('Non authentifié');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/posts/${postId}`, {
+        method: 'DELETE',
+        headers: {
+            'Authorization': `Bearer ${token}`
+        }
+    });
+
+    if (!response.ok) {
+        if (response.status === 401) {
+            logout();
+            throw new Error('Session expirée');
+        }
+        if (response.status === 403) {
+            throw new Error('Vous n\'êtes pas autorisé à supprimer ce post');
+        }
+        throw new Error('Erreur lors de la suppression du post');
+    }
+}
+
+export async function updateUserSettings(data: Partial<User>): Promise<User> {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('Non authentifié');
+    }
+
+    const response = await fetch('http://localhost:8080/user/settings/post-reload', {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(data)
+    });
+
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Erreur lors de la mise à jour des paramètres');
+    }
+
+    return response.json();
+}
+
+export async function checkUserStatus(userId: number): Promise<User> {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('Non authentifié');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/users/${userId}/status`, {
+        headers: {
+            'Authorization': `Bearer ${token}`
+        }
+    });
+
+    if (!response.ok) {
+        if (response.status === 401) {
+            logout();
+            throw new Error('Session expirée');
+        }
+        throw new Error('Erreur lors de la vérification du statut');
+    }
+
+    return response.json();
+}
+
+export async function fetchUserProfile(userId: number): Promise<User> {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('Non authentifié');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/users/${userId}/profile`, {
+        headers: {
+            'Authorization': `Bearer ${token}`
+        }
+    });
+
+    if (!response.ok) {
+        if (response.status === 401) {
+            logout();
+            throw new Error('Session expirée');
+        }
+        if (response.status === 403) {
+            throw new Error('Vous n\'avez pas les droits pour accéder à ce profil');
+        }
+        throw new Error('Erreur lors de la récupération du profil');
     }
 
     return response.json();

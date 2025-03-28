@@ -1,25 +1,53 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Button from '../ui/buttons';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { login } from '../lib/loaders';
 
 export default function SignIn() {
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const [searchParams] = useSearchParams();
+  const { setUser } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (searchParams.get('verified') === 'true') {
+      setSuccess('Votre email a bien été vérifié');
+    } else if (searchParams.get('registered') === 'true') {
+      setSuccess('Vérifiez votre boite mail, un email de vérification vous a été envoyé');
+    }
+  }, [searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setSuccess('');
     setIsSubmitting(true);
     try {
-      await login(email, password);
+      const response = await login({ email, password });
+      setUser(response.user);
       navigate('/');
-    } catch (err) {
-      setError('Email ou mot de passe incorrect');
+    } catch (err: any) {
+      if (err.message === 'Ce compte a été bloqué pour non respect des conditions d’utilisation') {
+        setError('Ce compte a été bloqué pour non respect des conditions d’utilisation');
+      } else if (err.message === 'Veuillez vérifier votre email avant de vous connecter') {
+        setError('Veuillez vérifier votre email avant de vous connecter');
+        // Envoyer un nouvel email de vérification
+        await fetch('http://localhost:8080/resend-verification', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ email }),
+        });
+        setSuccess('Un nouvel email de vérification vous a été envoyé');
+      } else {
+        setError('Email ou mot de passe incorrect');
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -42,6 +70,11 @@ export default function SignIn() {
           {error && (
             <div className="text-red-500 text-sm text-center">
               {error}
+            </div>
+          )}
+          {success && (
+            <div className="text-green-500 text-sm text-center">
+              {success}
             </div>
           )}
           <div className="space-y-4">
