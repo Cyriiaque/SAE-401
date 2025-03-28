@@ -95,18 +95,18 @@ export default function Dashboard() {
         <div className="flex min-h-screen bg-white">
             <Sidebar />
             <div className="flex-1 lg:ml-64">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     {/* En-tête mobile */}
                     <div className="sticky top-0 bg-white z-10 border-b border-gray-200 lg:hidden">
-                        <div className="p-4 flex items-center justify-center">
-                            <h1 className="text-xl font-bold">Dashboard - Admin</h1>
+                        <div className="p-5 flex items-center justify-center">
+                            <h2 className="text-xl font-bold">Dashboard - Admin</h2>
                         </div>
                     </div>
 
                     {/* En-tête desktop */}
                     <div className="hidden lg:block border-b border-gray-200 sticky top-0 bg-white z-10">
-                        <div className="p-4">
-                            <h1 className="text-xl font-bold">Dashboard - Admin</h1>
+                        <div className="p-5">
+                            <h2 className="text-xl font-bold text-center">Dashboard - Admin</h2>
                         </div>
                     </div>
 
@@ -215,7 +215,7 @@ export default function Dashboard() {
                                                     {!(user.roles ?? []).includes('ROLE_ADMIN') && (
                                                         <button
                                                             onClick={() => handleBan(user)}
-                                                            className="text-red-500 hover:text-red-700"
+                                                            className="text-red-500 hover:text-red-700 cursor-pointer"
                                                             title={user.isbanned ? 'Dé-bannir' : 'Bannir'}
                                                         >
                                                             {user.isbanned ? (

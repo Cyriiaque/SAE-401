@@ -56,9 +56,13 @@ export default function Settings() {
         <div className="flex min-h-screen bg-white">
             <Sidebar />
             <div className="flex-1 lg:ml-64">
-                <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-                    <h1 className="text-xl font-bold mb-8 text-center">Paramètres</h1>
-                    <div className='flex flex-row gap-4'>
+                <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <div className="border-b border-gray-200 sticky top-0 bg-white z-10">
+                        <div className="p-5">
+                            <h2 className="text-xl font-bold text-center">Paramètres</h2>
+                        </div>
+                    </div>
+                    <div className='mt-8 flex flex-row gap-4'>
                         <h2 className="text-xl font-semibold mb-6">Actualisation régulière des posts</h2>
                         {/* Toggle On/Off */}
                         <div className="mb-5 flex items-center">

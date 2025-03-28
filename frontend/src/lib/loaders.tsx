@@ -417,3 +417,75 @@ export async function fetchUserProfile(userId: number): Promise<User> {
 
     return response.json();
 }
+
+export async function checkFollowStatus(targetUserId: number): Promise<{ isFollowing: boolean }> {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('Non authentifié');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/users/${targetUserId}/follow-status`, {
+        method: 'GET',
+        headers: {
+            'Authorization': `Bearer ${token}`
+        }
+    });
+
+    if (!response.ok) {
+        if (response.status === 401) {
+            logout();
+            throw new Error('Session expirée');
+        }
+        throw new Error('Erreur lors de la vérification du statut de suivi');
+    }
+
+    return response.json();
+}
+
+export async function toggleFollow(targetUserId: number): Promise<{ isFollowing: boolean }> {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('Non authentifié');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/users/${targetUserId}/toggle-follow`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${token}`
+        }
+    });
+
+    if (!response.ok) {
+        if (response.status === 401) {
+            logout();
+            throw new Error('Session expirée');
+        }
+        throw new Error('Erreur lors du changement de statut de suivi');
+    }
+
+    return response.json();
+}
+
+export async function fetchFollowedPosts(page: number): Promise<PostsResponse> {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        logout();
+        throw new Error('Non authentifié');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/posts/followed?page=${page}`, {
+        headers: {
+            'Authorization': `Bearer ${token}`
+        }
+    });
+
+    if (!response.ok) {
+        if (response.status === 401) {
+            logout();
+            throw new Error('Session expirée');
+        }
+        throw new Error('Erreur lors de la récupération des posts des profils suivis');
+    }
+
+    return response.json();
+}

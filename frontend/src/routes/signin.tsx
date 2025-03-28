@@ -32,8 +32,8 @@ export default function SignIn() {
       setUser(response.user);
       navigate('/');
     } catch (err: any) {
-      if (err.message === 'Ce compte a été bloqué pour non respect des conditions d’utilisation') {
-        setError('Ce compte a été bloqué pour non respect des conditions d’utilisation');
+      if (err.message === "Ce compte a été bloqué pour non respect des conditions d'utilisation") {
+        setError("Ce compte a été bloqué pour non respect des conditions d'utilisation");
       } else if (err.message === 'Veuillez vérifier votre email avant de vous connecter') {
         setError('Veuillez vérifier votre email avant de vous connecter');
         // Envoyer un nouvel email de vérification

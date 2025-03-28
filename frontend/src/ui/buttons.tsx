@@ -40,6 +40,7 @@ interface ButtonPropsLogic {
   onClick?: () => void;
   disabled?: boolean;
   type?: "button" | "submit" | "reset";
+  title?: string;
 }
 
 type ButtonProps = ButtonPropsCVA & ButtonPropsdata & ButtonPropsLogic;

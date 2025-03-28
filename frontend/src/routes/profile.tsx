@@ -148,13 +148,14 @@ export default function Profile() {
                 <div className="max-w-2xl mx-auto">
                     {/* En-tête mobile */}
                     <div className="sticky top-0 bg-white z-10 border-b border-gray-200 lg:hidden">
-                        <div className="p-4 flex items-center justify-between">
+                        <div className="p-4 flex items-center">
                             <div className="flex-1 text-center">
-                                <h1 className="text-xl font-bold">Profil</h1>
+                                <h1 className="ml-8 text-xl font-bold">Profil</h1>
                             </div>
-                            <button
+                            <Button
                                 onClick={refreshPosts}
-                                className="p-2 rounded-full hover:bg-gray-100"
+                                variant="outline"
+                                className="p-2"
                                 title="Rafraîchir les posts"
                             >
                                 <svg
@@ -163,7 +164,7 @@ export default function Profile() {
                                     viewBox="0 0 24 24"
                                     strokeWidth={1.5}
                                     stroke="currentColor"
-                                    className="w-5 h-5 text-[#F05E1D]"
+                                    className="w-5 h-5"
                                 >
                                     <path
                                         strokeLinecap="round"
@@ -171,19 +172,20 @@ export default function Profile() {
                                         d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.990"
                                     />
                                 </svg>
-                            </button>
+                            </Button>
                         </div>
                     </div>
 
                     {/* En-tête desktop */}
                     <div className="hidden lg:block border-b border-gray-200 sticky top-0 bg-white z-10">
                         <div className="p-4 flex justify-between items-center">
-                            <div className="flex-1 text-center">
+                            <div className="flex-1 pl-4">
                                 <h1 className="text-xl font-bold">Profil</h1>
                             </div>
-                            <button
+                            <Button
                                 onClick={refreshPosts}
-                                className="flex items-center gap-2 px-4 py-2 border border-[#F05E1D] rounded-full text-[#F05E1D] hover:bg-[#F05E1D]/10"
+                                variant="outline"
+                                className="flex items-center gap-2"
                             >
                                 <svg
                                     xmlns="http://www.w3.org/2000/svg"
@@ -200,7 +202,7 @@ export default function Profile() {
                                     />
                                 </svg>
                                 Rafraîchir les posts
-                            </button>
+                            </Button>
                         </div>
                     </div>
 
@@ -230,17 +232,6 @@ export default function Profile() {
                                 alt={user.name || 'Avatar par défaut'}
                                 className="w-32 h-32 rounded-full border-4 border-white object-cover"
                             />
-                        </div>
-
-                        {/* Bouton de modification du profil */}
-                        <div className="absolute top-4 right-4">
-                            <Button
-                                variant="outline"
-                                size="default"
-                                onClick={() => {/* TODO: Implémenter la modification du profil */ }}
-                            >
-                                Modifier le profil
-                            </Button>
                         </div>
                     </div>
 

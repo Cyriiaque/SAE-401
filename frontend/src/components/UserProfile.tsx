@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
-import { User, fetchUserPosts, Tweet, fetchUserProfile } from '../lib/loaders';
+import { User, fetchUserPosts, Tweet, fetchUserProfile, checkFollowStatus, toggleFollow } from '../lib/loaders';
+import { useAuth } from '../contexts/AuthContext';
 import Button from '../ui/buttons';
 import TweetCard from './TweetCard';
+import ConfirmModal from './ConfirmModal';
 
 function formatContent(content: string): string {
     let maxLength;
@@ -53,10 +55,13 @@ interface UserProfileProps {
 }
 
 export default function UserProfile({ userId, onClose }: UserProfileProps) {
+    const { user: currentUser } = useAuth();
     const [user, setUser] = useState<User | null>(null);
     const [posts, setPosts] = useState<Tweet[]>([]);
     const [loading, setLoading] = useState(true);
     const [formattedBiography, setFormattedBiography] = useState('');
+    const [isFollowing, setIsFollowing] = useState(false);
+    const [confirmUnfollowOpen, setConfirmUnfollowOpen] = useState(false);
 
     useEffect(() => {
         const loadUserProfile = async () => {
@@ -69,6 +74,12 @@ export default function UserProfile({ userId, onClose }: UserProfileProps) {
                 // Charger les posts de l'utilisateur
                 const postsData = await fetchUserPosts(userId);
                 setPosts(postsData.posts);
+
+                // Vérifier le statut de suivi
+                if (currentUser && currentUser.id !== userId) {
+                    const followStatus = await checkFollowStatus(userId);
+                    setIsFollowing(followStatus.isFollowing);
+                }
             } catch (error) {
                 console.error('Erreur lors du chargement du profil:', error);
             } finally {
@@ -77,7 +88,7 @@ export default function UserProfile({ userId, onClose }: UserProfileProps) {
         };
 
         loadUserProfile();
-    }, [userId]);
+    }, [userId, currentUser?.id]);
 
     useEffect(() => {
         const handleResize = () => {
@@ -89,6 +100,33 @@ export default function UserProfile({ userId, onClose }: UserProfileProps) {
         window.addEventListener('resize', handleResize);
         return () => window.removeEventListener('resize', handleResize);
     }, [user?.biography]);
+
+    const handleToggleFollow = async () => {
+        if (!currentUser || currentUser.id === userId) return;
+
+        try {
+            if (isFollowing) {
+                // Ouvrir la modal de confirmation pour ne plus suivre
+                setConfirmUnfollowOpen(true);
+            } else {
+                // Suivre directement
+                const result = await toggleFollow(userId);
+                setIsFollowing(result.isFollowing);
+            }
+        } catch (error) {
+            console.error('Erreur lors du changement de statut de suivi:', error);
+        }
+    };
+
+    const confirmUnfollow = async () => {
+        try {
+            const result = await toggleFollow(userId);
+            setIsFollowing(result.isFollowing);
+            setConfirmUnfollowOpen(false);
+        } catch (error) {
+            console.error('Erreur lors du désabonnement:', error);
+        }
+    };
 
     if (loading) {
         return (
@@ -105,12 +143,12 @@ export default function UserProfile({ userId, onClose }: UserProfileProps) {
     return (
         <div className="fixed inset-0 overflow-y-auto">
             <div className="min-h-screen text-center">
-                <div className="fixed inset-0 bg-black/30" onClick={onClose}></div>
-                <div className="relative inline-block w-full max-w-2xl transform overflow-hidden bg-white text-left align-middle shadow-xl transition-all">
+                <div className="fixed inset-0 bg-black/30 backdrop-blur-md" onClick={onClose}></div>
+                <div className="relative inline-block w-full max-w-2xl transform overflow-hidden bg-white text-left align-middle shadow-xl transition-all h-full min-h-screen">
                     {/* Bouton de fermeture */}
                     <button
                         onClick={onClose}
-                        className="absolute top-4 left-4 z-50 p-2 rounded-full hover:bg-gray-100 bg-white border border-gray-200 shadow-sm"
+                        className="absolute top-4 left-4 z-50 p-2 rounded-full hover:bg-gray-100 bg-white border border-gray-200 shadow-sm cursor-pointer"
                         title="Retour"
                     >
                         <svg
@@ -157,9 +195,34 @@ export default function UserProfile({ userId, onClose }: UserProfileProps) {
                     </div>
 
                     {/* Informations de l'utilisateur */}
-                    <div className="mt-20 px-4">
+                    <div className="mt-15 px-4">
                         <div className="flex flex-col space-y-2">
-                            <h1 className="text-xl font-bold">{user.name}</h1>
+                            <div className="flex justify-between items-center">
+                                <h1 className="text-xl font-bold">{user.name}</h1>
+                                {currentUser && currentUser.id !== userId && (
+                                    <Button
+                                        variant="full"
+                                        onClick={handleToggleFollow}
+                                        className="flex items-center space-x-2"
+                                    >
+                                        {isFollowing ? (
+                                            <>
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+                                                </svg>
+                                                <span>Ne plus suivre</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                                </svg>
+                                                <span>Suivre</span>
+                                            </>
+                                        )}
+                                    </Button>
+                                )}
+                            </div>
                             <p className="text-gray-500">@{user.mention}</p>
                             <p className="text-gray-700 whitespace-pre-line">{formattedBiography || 'Aucune biographie'}</p>
                         </div>
@@ -180,6 +243,17 @@ export default function UserProfile({ userId, onClose }: UserProfileProps) {
                     </div>
                 </div>
             </div>
+
+            {/* Modal de confirmation de désabonnement */}
+            <ConfirmModal
+                isOpen={confirmUnfollowOpen}
+                onClose={() => setConfirmUnfollowOpen(false)}
+                onConfirm={confirmUnfollow}
+                title="Ne plus suivre"
+                message="Êtes-vous sûr de vouloir arrêter de suivre cet utilisateur ?"
+                confirmText="Ne plus suivre"
+                variant="full"
+            />
         </div>
     );
 } 
