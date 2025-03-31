@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { User, fetchUserPosts, Tweet, fetchUserProfile, checkFollowStatus, toggleFollow } from '../lib/loaders';
+import { User, fetchUserPosts, Tweet, fetchUserProfile, checkFollowStatus, toggleFollow, getImageUrl, deletePost } from '../lib/loaders';
 import { useAuth } from '../contexts/AuthContext';
 import Button from '../ui/buttons';
 import TweetCard from './TweetCard';
@@ -62,6 +62,7 @@ export default function UserProfile({ userId, onClose }: UserProfileProps) {
     const [formattedBiography, setFormattedBiography] = useState('');
     const [isFollowing, setIsFollowing] = useState(false);
     const [confirmUnfollowOpen, setConfirmUnfollowOpen] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         const loadUserProfile = async () => {
@@ -128,10 +129,25 @@ export default function UserProfile({ userId, onClose }: UserProfileProps) {
         }
     };
 
+    const handlePostUpdated = (updatedPost: Tweet) => {
+        setPosts(prev => prev.map(post =>
+            post.id === updatedPost.id ? updatedPost : post
+        ));
+    };
+
+    const handleDeletePost = async (postId: number) => {
+        try {
+            await deletePost(postId);
+            setPosts(prev => prev.filter(post => post.id !== postId));
+        } catch (error) {
+            console.error('Erreur lors de la suppression du post:', error);
+        }
+    };
+
     if (loading) {
         return (
             <div className="flex justify-center items-center h-64">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#F05E1D]"></div>
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange"></div>
             </div>
         );
     }
@@ -143,7 +159,7 @@ export default function UserProfile({ userId, onClose }: UserProfileProps) {
     return (
         <div className="fixed inset-0 overflow-y-auto">
             <div className="min-h-screen text-center">
-                <div className="fixed inset-0 bg-black/30 backdrop-blur-md" onClick={onClose}></div>
+                <div className="fixed inset-0" onClick={onClose}></div>
                 <div className="relative inline-block w-full max-w-2xl transform overflow-hidden bg-white text-left align-middle shadow-xl transition-all h-full min-h-screen">
                     {/* Bouton de fermeture */}
                     <button
@@ -171,12 +187,9 @@ export default function UserProfile({ userId, onClose }: UserProfileProps) {
                     <div className="h-48 bg-gray-200 relative">
                         {user.banner ? (
                             <img
-                                src={user.banner}
+                                src={getImageUrl(user.banner)}
                                 alt="Bannière"
                                 className="w-full h-full object-cover"
-                                onError={(e) => {
-                                    console.error('Erreur de chargement de la bannière:', e);
-                                }}
                             />
                         ) : (
                             <div className="w-full h-full bg-gray-200 flex items-center justify-center">
@@ -187,7 +200,7 @@ export default function UserProfile({ userId, onClose }: UserProfileProps) {
                         {/* Photo de profil */}
                         <div className="absolute -bottom-16 left-4">
                             <img
-                                src={user.avatar || '/default_pp.webp'}
+                                src={user.avatar ? getImageUrl(user.avatar) : '/default_pp.webp'}
                                 alt={user.name || 'Avatar par défaut'}
                                 className="w-32 h-32 rounded-full border-4 border-white object-cover"
                             />
@@ -232,7 +245,11 @@ export default function UserProfile({ userId, onClose }: UserProfileProps) {
                     <div className="mt-8 divide-y divide-gray-200 max-h-[50vh] overflow-y-auto">
                         {posts.map((post) => (
                             <div key={post.id}>
-                                <TweetCard tweet={post} />
+                                <TweetCard
+                                    tweet={post}
+                                    onDelete={handleDeletePost}
+                                    onPostUpdated={handlePostUpdated}
+                                />
                             </div>
                         ))}
                         {posts.length === 0 && (

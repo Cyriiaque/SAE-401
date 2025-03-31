@@ -21,6 +21,7 @@ class PostService
     {
         $post = new Post();
         $post->setContent($payload->getContent());
+        $post->setMediaUrl($payload->getMediaUrl());
         $post->setIdUser($user);
         $post->setCreatedAt(new \DateTime());
 

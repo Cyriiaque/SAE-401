@@ -15,6 +15,9 @@ class CreatePostRequest
     )]
     private string $content;
 
+    #[Assert\Length(max: 255)]
+    private ?string $mediaUrl = null;
+
     public function getContent(): string
     {
         return $this->content;
@@ -23,6 +26,17 @@ class CreatePostRequest
     public function setContent(string $content): self
     {
         $this->content = $content;
+        return $this;
+    }
+
+    public function getMediaUrl(): ?string
+    {
+        return $this->mediaUrl;
+    }
+
+    public function setMediaUrl(?string $mediaUrl): self
+    {
+        $this->mediaUrl = $mediaUrl;
         return $this;
     }
 }

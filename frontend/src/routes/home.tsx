@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { usePostModal } from '../contexts/PostModalContext';
 import TweetCard from '../components/TweetCard';
 import Sidebar from '../components/Sidebar';
-import { fetchPosts, Tweet, fetchFollowedPosts } from '../lib/loaders';
+import { fetchPosts, Tweet, fetchFollowedPosts, getImageUrl } from '../lib/loaders';
 import UserProfile from '../components/UserProfile';
 import Button from '../ui/buttons';
 
@@ -95,7 +95,7 @@ const TabNavigation = ({
         <button
           onClick={() => handleTabChange('actualite')}
           className={`flex-1 p-4 text-center font-bold transition-colors cursor-pointer ${activeTab === 'actualite'
-            ? 'text-[#F05E1D] border-b-2 border-[#F05E1D]'
+            ? 'text-orange border-b-2 border-orange'
             : 'text-gray-500 hover:bg-gray-100'
             }`}
         >
@@ -104,7 +104,7 @@ const TabNavigation = ({
         <button
           onClick={() => handleTabChange('suivis')}
           className={`flex-1 p-4 text-center font-bold transition-colors cursor-pointer ${activeTab === 'suivis'
-            ? 'text-[#F05E1D] border-b-2 border-[#F05E1D]'
+            ? 'text-orange border-b-2 border-orange'
             : 'text-gray-500 hover:bg-gray-100'
             }`}
         >
@@ -232,6 +232,12 @@ export default function Home() {
     setHasMore(true);
   };
 
+  const handlePostUpdated = (updatedPost: Tweet) => {
+    setPosts(prev => prev.map(post =>
+      post.id === updatedPost.id ? updatedPost : post
+    ));
+  };
+
   if (!user) {
     navigate('/signin');
     return null;
@@ -258,6 +264,7 @@ export default function Home() {
                 key={post.id}
                 tweet={post}
                 onUserProfileClick={handleUserProfileClick}
+                onPostUpdated={handlePostUpdated}
               />
             ))}
 
@@ -287,11 +294,13 @@ export default function Home() {
 
       {/* Profil utilisateur */}
       {selectedUserId && (
-        <div className="fixed inset-0 bg-white z-50 overflow-y-auto">
-          <UserProfile
-            userId={selectedUserId}
-            onClose={handleCloseUserProfile}
-          />
+        <div className="fixed inset-0 bg-black/30 bg-opacity-50 z-50 flex items-center justify-center backdrop-blur-sm overflow-y-auto">
+          <div className="w-full max-w-2xl mx-auto my-auto">
+            <UserProfile
+              userId={selectedUserId}
+              onClose={handleCloseUserProfile}
+            />
+          </div>
         </div>
       )}
     </div>

@@ -56,7 +56,7 @@ export default function Publish({ onTweetPublished }: PublishProps) {
           placeholder="Quoi de neuf ?"
           className={`w-full p-3 border rounded-lg resize-none focus:outline-none focus:ring-2 ${newTweet.length > maxLength
             ? 'border-red-500 focus:ring-red-500'
-            : 'border-gray-300 focus:ring-[#F05E1D] focus:border-[#F05E1D]'
+            : 'border-gray-300 focus:ring-orange focus:border-orange'
             }`}
           rows={4}
           disabled={isSubmitting}

@@ -19,6 +19,7 @@ use Symfony\Component\Security\Http\Attribute\CurrentUser;
 use Doctrine\ORM\EntityManagerInterface;
 use App\Entity\UserInteraction;
 use App\Entity\Post;
+use App\Entity\User;
 
 class PostController extends AbstractController
 {
@@ -59,6 +60,7 @@ class PostController extends AbstractController
                 $posts[] = [
                     'id' => $post->getId(),
                     'content' => $post->getContent(),
+                    'mediaUrl' => $post->getMediaUrl(),
                     'created_at' => $post->getCreatedAt()->format('Y-m-d H:i:s'),
                     'likes' => $totalLikes,
                     'isLiked' => $interaction ? $interaction->isLiked() : false,
@@ -149,6 +151,7 @@ class PostController extends AbstractController
             $posts[] = [
                 'id' => $post->getId(),
                 'content' => $post->getContent(),
+                'mediaUrl' => $post->getMediaUrl(),
                 'created_at' => $post->getCreatedAt()->format('Y-m-d H:i:s'),
                 'likes' => $totalLikes,
                 'isLiked' => $interaction ? $interaction->isLiked() : false,
@@ -174,39 +177,45 @@ class PostController extends AbstractController
     #[IsGranted('ROLE_USER')]
     public function create(
         Request $request,
-        SerializerInterface $serializer,
-        ValidatorInterface $validator,
-        PostService $postService,
-        #[CurrentUser] $user
+        EntityManagerInterface $entityManager
     ): JsonResponse {
-        if (!$user) {
-            return $this->json(['message' => 'Non authentifié'], Response::HTTP_UNAUTHORIZED);
+        $data = json_decode($request->getContent(), true);
+
+        // Validation des données
+        if (!isset($data['content'])) {
+            return $this->json(['message' => 'Contenu requis'], 400);
         }
 
-        /** @var CreatePostRequest $payload */
-        $payload = $serializer->deserialize($request->getContent(), CreatePostRequest::class, 'json');
+        /** @var User $user */
+        $user = $this->getUser();
 
-        $errors = $validator->validate($payload);
-        if (count($errors) > 0) {
-            return $this->json(['errors' => (string) $errors], Response::HTTP_UNPROCESSABLE_ENTITY);
+        $post = new Post();
+        $post->setContent($data['content']);
+        $post->setIdUser($user);
+        $post->setCreatedAt(new \DateTimeImmutable());
+
+        // Gestion des médias (jusqu'à 10)
+        if (isset($data['mediaUrls']) && is_array($data['mediaUrls']) && count($data['mediaUrls']) <= 10) {
+            $post->setMediaUrl(implode(',', $data['mediaUrls']));
         }
 
-        $post = $postService->create($payload, $user);
+        $entityManager->persist($post);
+        $entityManager->flush();
 
         return $this->json([
             'id' => $post->getId(),
             'content' => $post->getContent(),
             'created_at' => $post->getCreatedAt()->format('Y-m-d H:i:s'),
+            'mediaUrl' => $post->getMediaUrl(),
             'likes' => 0,
             'isLiked' => false,
             'user' => [
                 'id' => $user->getId(),
-                'email' => $user->getEmail(),
                 'name' => $user->getName(),
                 'mention' => $user->getMention(),
                 'avatar' => $user->getAvatar()
             ]
-        ], Response::HTTP_CREATED);
+        ]);
     }
 
     #[Route('/posts/{id}', name: 'posts.get', methods: ['GET'])]
@@ -235,6 +244,7 @@ class PostController extends AbstractController
                 $posts[] = [
                     'id' => $post->getId(),
                     'content' => $post->getContent(),
+                    'mediaUrl' => $post->getMediaUrl(),
                     'created_at' => $post->getCreatedAt()->format('Y-m-d H:i:s'),
                     'likes' => $totalLikes,
                     'isLiked' => $interaction ? $interaction->isLiked() : false,
@@ -252,6 +262,53 @@ class PostController extends AbstractController
         return $this->json([
             'posts' => $posts
         ]);
+    }
+
+    #[Route('/post/{id}', name: 'post.get_single', methods: ['GET'])]
+    public function getSinglePost(
+        int $id,
+        PostRepository $postRepository,
+        PostInteractionRepository $interactionRepository,
+        #[CurrentUser] $user
+    ): Response {
+        // Récupérer le post par son ID
+        $post = $postRepository->find($id);
+
+        if (!$post) {
+            return $this->json(['message' => 'Post non trouvé'], Response::HTTP_NOT_FOUND);
+        }
+
+        $userPost = $post->getIdUser();
+
+        // Récupérer l'interaction de l'utilisateur avec ce post
+        $interaction = $interactionRepository->findOneBy([
+            'user' => $user,
+            'post' => $post
+        ]);
+
+        // Compter le nombre total de likes pour ce post
+        $totalLikes = $interactionRepository->count(['post' => $post, 'liked' => true]);
+
+        // Log des informations du post pour débogage
+        error_log('Récupération du post ID ' . $id . ', médias: ' . $post->getMediaUrl());
+
+        $postData = [
+            'id' => $post->getId(),
+            'content' => $post->getContent(),
+            'mediaUrl' => $post->getMediaUrl(),
+            'created_at' => $post->getCreatedAt()->format('Y-m-d H:i:s'),
+            'likes' => $totalLikes,
+            'isLiked' => $interaction ? $interaction->isLiked() : false,
+            'user' => $userPost ? [
+                'id' => $userPost->getId(),
+                'email' => $userPost->getEmail(),
+                'name' => $userPost->getName(),
+                'mention' => $userPost->getMention(),
+                'avatar' => $userPost->getAvatar()
+            ] : null
+        ];
+
+        return $this->json($postData);
     }
 
     #[Route('/posts/{id}', name: 'posts.delete', methods: ['DELETE'])]
@@ -285,5 +342,70 @@ class PostController extends AbstractController
         $entityManager->flush();
 
         return $this->json(['message' => 'Post supprimé avec succès']);
+    }
+
+    #[Route('/posts/{id}', name: 'posts.update', methods: ['PUT'], format: 'json')]
+    #[IsGranted('ROLE_USER')]
+    public function update(
+        int $id,
+        Request $request,
+        PostRepository $postRepository,
+        PostInteractionRepository $interactionRepository,
+        EntityManagerInterface $entityManager,
+        #[CurrentUser] $user
+    ): JsonResponse {
+        $post = $postRepository->find($id);
+
+        if (!$post) {
+            return $this->json(['message' => 'Post non trouvé'], Response::HTTP_NOT_FOUND);
+        }
+
+        // Vérifier si l'utilisateur est le propriétaire du post
+        if ($post->getIdUser()->getId() !== $user->getId()) {
+            return $this->json(['message' => 'Vous n\'êtes pas autorisé à modifier ce post'], Response::HTTP_FORBIDDEN);
+        }
+
+        $data = json_decode($request->getContent(), true);
+
+        // Validation des données (contenu et/ou média requis)
+        if (!isset($data['content']) && !isset($data['mediaUrls'])) {
+            return $this->json(['message' => 'Contenu ou média requis'], 400);
+        }
+
+        // Mise à jour du contenu si présent
+        if (isset($data['content'])) {
+            $post->setContent($data['content']);
+        }
+
+        // Mise à jour des médias si présents
+        if (isset($data['mediaUrls']) && is_array($data['mediaUrls']) && count($data['mediaUrls']) <= 10) {
+            $post->setMediaUrl(implode(',', $data['mediaUrls']));
+        }
+
+        $entityManager->flush();
+
+        // Récupérer le nombre de likes
+        $totalLikes = $interactionRepository->count(['post' => $post, 'liked' => true]);
+
+        // Vérifier si l'utilisateur a liké ce post
+        $interaction = $interactionRepository->findOneBy([
+            'user' => $user,
+            'post' => $post
+        ]);
+
+        return $this->json([
+            'id' => $post->getId(),
+            'content' => $post->getContent(),
+            'created_at' => $post->getCreatedAt()->format('Y-m-d H:i:s'),
+            'mediaUrl' => $post->getMediaUrl(),
+            'likes' => $totalLikes,
+            'isLiked' => $interaction ? $interaction->isLiked() : false,
+            'user' => [
+                'id' => $user->getId(),
+                'name' => $user->getName(),
+                'mention' => $user->getMention(),
+                'avatar' => $user->getAvatar()
+            ]
+        ]);
     }
 }

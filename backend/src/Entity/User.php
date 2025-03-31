@@ -37,12 +37,12 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     #[Assert\Length(min: 8, minMessage: 'Le mot de passe doit faire au moins {{ limit }} caractères')]
     private ?string $password = null;
 
-    #[ORM\Column(length: 255, nullable: true)]
+    #[ORM\Column(length: 20, nullable: true)]
     #[Assert\NotBlank(message: 'Le nom d\'utilisateur ne peut pas être vide')]
     #[Assert\Length(min: 3, minMessage: 'Le nom d\'utilisateur doit faire au moins {{ limit }} caractères')]
     private ?string $mention = null;
 
-    #[ORM\Column(length: 255, nullable: true)]
+    #[ORM\Column(length: 20, nullable: true)]
     #[Assert\NotBlank(message: 'Le nom ne peut pas être vide')]
     private ?string $name = null;
 
@@ -55,7 +55,7 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     #[ORM\Column(length: 255, nullable: true)]
     private ?string $biography = null;
 
-    #[ORM\Column(type: Types::TEXT, nullable: true)]
+    #[ORM\Column(length: 255, nullable: true)]
     private ?string $banner = null;
 
     #[ORM\Column]

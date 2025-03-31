@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { usePostModal } from '../contexts/PostModalContext';
 import Button from '../ui/buttons';
 import { useState, useEffect } from 'react';
+import { getImageUrl } from '../lib/loaders';
 
 export default function Sidebar() {
     const { user, logout } = useAuth();
@@ -146,7 +147,7 @@ export default function Sidebar() {
                 <div className="mt-auto space-y-4">
                     <div className="flex items-center space-x-3 p-3">
                         <img
-                            src={user.avatar || '/default_pp.webp'}
+                            src={user.avatar ? getImageUrl(user.avatar) : '/default_pp.webp'}
                             alt={user.name || 'Avatar par défaut'}
                             className="w-10 h-10 rounded-full object-cover"
                         />

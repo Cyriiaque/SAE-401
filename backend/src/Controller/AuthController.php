@@ -104,6 +104,19 @@ class AuthController extends AbstractController
                 ], JsonResponse::HTTP_BAD_REQUEST);
             }
 
+            // Valider la longueur du nom et de la mention
+            if (strlen($data['name']) > 20) {
+                return $this->json([
+                    'message' => 'Le nom ne doit pas dépasser 20 caractères'
+                ], JsonResponse::HTTP_BAD_REQUEST);
+            }
+
+            if (strlen($data['mention']) > 20) {
+                return $this->json([
+                    'message' => 'La mention ne doit pas dépasser 20 caractères'
+                ], JsonResponse::HTTP_BAD_REQUEST);
+            }
+
             // Vérifier si l'email existe déjà
             $existingUser = $entityManager->getRepository(User::class)->findOneBy(['email' => $data['email']]);
             if ($existingUser) {

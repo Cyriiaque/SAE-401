@@ -10,7 +10,7 @@ use Symfony\Component\Routing\Annotation\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 use Doctrine\ORM\EntityManagerInterface;
 
-class DashboardController extends AbstractController
+class UserController extends AbstractController
 {
     #[Route('/users', name: 'app_users_list', methods: ['GET'])]
     #[IsGranted('ROLE_ADMIN')]
@@ -36,7 +36,7 @@ class DashboardController extends AbstractController
     }
 
     #[Route('/users/{id}', name: 'app_user_update', methods: ['PUT'])]
-    #[IsGranted('ROLE_ADMIN')]
+    #[IsGranted('ROLE_USER')]
     public function update(
         int $id,
         Request $request,
@@ -50,6 +50,19 @@ class DashboardController extends AbstractController
         }
 
         $data = json_decode($request->getContent(), true);
+
+        // Valider la longueur du nom et de la mention
+        if (isset($data['name']) && strlen($data['name']) > 20) {
+            return $this->json([
+                'message' => 'Le nom ne doit pas dépasser 20 caractères'
+            ], JsonResponse::HTTP_BAD_REQUEST);
+        }
+
+        if (isset($data['mention']) && strlen($data['mention']) > 20) {
+            return $this->json([
+                'message' => 'La mention ne doit pas dépasser 20 caractères'
+            ], JsonResponse::HTTP_BAD_REQUEST);
+        }
 
         if (isset($data['name'])) {
             $user->setName($data['name']);
@@ -78,6 +91,9 @@ class DashboardController extends AbstractController
         }
         if (isset($data['isVerified'])) {
             $user->setIsVerified($data['isVerified']);
+        }
+        if (isset($data['email'])) {
+            $user->setEmail($data['email']);
         }
 
         $entityManager->flush();

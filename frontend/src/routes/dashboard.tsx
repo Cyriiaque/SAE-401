@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { User, fetchUsers, updateUser } from '../lib/loaders';
+import { User, fetchUsers, updateUser, banUser, getImageUrl } from '../lib/loaders';
 import { useNavigate } from 'react-router-dom';
 import Button from '../ui/buttons';
 import { useAuth } from '../contexts/AuthContext';
@@ -59,35 +59,16 @@ export default function Dashboard() {
         setConfirmBanModalOpen(true);
     };
 
-    const confirmBan = async () => {
-        if (!userToBan) return;
-
+    const handleBanUser = async (userToBan: User) => {
         try {
-            const updatedUsers = users.map(u =>
-                u.id === userToBan.id
-                    ? { ...u, isbanned: !u.isbanned }
-                    : u
+            await banUser(userToBan.id);
+            // Mettre à jour la liste des utilisateurs après le bannissement
+            const updatedUsers = users.map(user =>
+                user.id === userToBan.id ? { ...user, isbanned: !user.isbanned } : user
             );
             setUsers(updatedUsers);
-
-            const response = await fetch(`http://localhost:8080/users/${userToBan.id}/ban`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`
-                },
-            });
-
-            if (!response.ok) {
-                // Revert local state if API call fails
-                setUsers(users);
-                setError('Erreur lors du changement de statut de ban');
-            }
         } catch (error) {
-            setUsers(users);
-            setError('Erreur de réseau');
-        } finally {
-            setUserToBan(null);
+            console.error('Erreur lors du bannissement:', error);
         }
     };
 
@@ -112,7 +93,7 @@ export default function Dashboard() {
 
                     {loading ? (
                         <div className="flex justify-center items-center h-64">
-                            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#F05E1D]"></div>
+                            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange"></div>
                         </div>
                     ) : error ? (
                         <div className="text-center text-red-500 p-4">{error}</div>
@@ -121,12 +102,12 @@ export default function Dashboard() {
                             {/* Version mobile et tablette */}
                             <div className="lg:hidden flex flex-col items-center space-y-6">
                                 {users.map((user) => (
-                                    <div key={user.id} className={`bg-white rounded-lg shadow p-6 border ${user.isbanned ? 'border-red-500' : 'border-[#F05E1D]'} w-full max-w-md`}>
+                                    <div key={user.id} className={`bg-white rounded-lg shadow p-6 border ${user.isbanned ? 'border-red-500' : 'border-orange'} w-full max-w-md`}>
                                         <div className="flex items-center space-x-4">
                                             <img
-                                                src={user.avatar || '/default_pp.webp'}
+                                                src={user.avatar ? getImageUrl(user.avatar) : '/default_pp.webp'}
                                                 alt={user.name || 'Avatar par défaut'}
-                                                className="h-16 w-16 rounded-full object-cover"
+                                                className="w-10 h-10 rounded-full object-cover"
                                             />
                                             <div className="flex-1">
                                                 <h2 className="text-lg font-semibold">{user.name}</h2>
@@ -170,9 +151,9 @@ export default function Dashboard() {
                             </div>
 
                             {/* Version desktop */}
-                            <div className="hidden lg:block bg-white rounded-lg shadow-lg overflow-hidden border border-[#F05E1D]">
+                            <div className="hidden lg:block bg-white rounded-lg shadow-lg overflow-hidden border border-orange">
                                 <table className="min-w-full">
-                                    <thead className="bg-gray-100 border-b border-[#F05E1D]">
+                                    <thead className="bg-gray-100 border-b border-orange">
                                         <tr>
                                             <th className="px-8 py-4 text-left text-sm font-semibold text-gray-700">ID</th>
                                             <th className="px-8 py-4 text-left text-sm font-semibold text-gray-700">Email</th>
@@ -192,7 +173,7 @@ export default function Dashboard() {
                                                 <td className="px-8 py-4 text-sm text-gray-900">@{user.mention}</td>
                                                 <td className="px-8 py-4">
                                                     <img
-                                                        src={user.avatar || '/default_pp.webp'}
+                                                        src={user.avatar ? getImageUrl(user.avatar) : '/default_pp.webp'}
                                                         alt={user.name || 'Avatar par défaut'}
                                                         className="h-10 w-10 rounded-full object-cover"
                                                     />
@@ -254,7 +235,7 @@ export default function Dashboard() {
             <ConfirmModal
                 isOpen={confirmBanModalOpen}
                 onClose={() => setConfirmBanModalOpen(false)}
-                onConfirm={confirmBan}
+                onConfirm={() => handleBanUser(userToBan!)}
                 title={`${userToBan?.isbanned ? 'Débannir' : 'Bannir'} l'utilisateur`}
                 message={`Êtes-vous sûr de vouloir ${userToBan?.isbanned ? 'débannir' : 'bannir'} cet utilisateur ?`}
                 confirmText={userToBan?.isbanned ? 'Débannir' : 'Bannir'}

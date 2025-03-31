@@ -17,6 +17,9 @@ class Post
     #[ORM\Column(length: 280, nullable: true)]
     private ?string $content = null;
 
+    #[ORM\Column(length: 255, nullable: true)]
+    private ?string $mediaUrl = null;
+
     #[ORM\Column(type: Types::DATETIME_MUTABLE)]
     private ?\DateTimeInterface $created_at = null;
 
@@ -68,6 +71,17 @@ class Post
     {
         $this->user = $user;
 
+        return $this;
+    }
+
+    public function getMediaUrl(): ?string
+    {
+        return $this->mediaUrl;
+    }
+
+    public function setMediaUrl(?string $mediaUrl): static
+    {
+        $this->mediaUrl = $mediaUrl;
         return $this;
     }
 }

@@ -7,9 +7,9 @@ const buttonVariants = cva("rounded-full font-bold focus:outline-none transition
       default:
         "bg-black text-white hover:bg-gray-900 focus:bg-gray-900 disabled:hover:bg-black",
       outline:
-        "border border-[#F05E1D] text-[#F05E1D] hover:bg-[#F05E1D]/10 disabled:hover:bg-transparent",
+        "border border-orange text-orange hover:bg-light-orange disabled:hover:bg-transparent",
       full:
-        "bg-[#F05E1D] text-white hover:bg-dark-orange",
+        "bg-orange text-white hover:bg-dark-orange",
     },
     size: {
       default: "h-10 px-4 py-2",

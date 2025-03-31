@@ -1,70 +1,14 @@
 @import 'tailwindcss';
 
-@layer theme {
-  :root {
-    --color-white: white;
-    --color-black: black;
-    --color-orange: #F05E1D;
-    --color-dark-orange: #D84E1A;
-    --color-light-orange: #F05E1D/10;
-    
-    --color-light: var(--color-white);
-    --color-dark: var(--color-black);
-  }
-}
-
-@layer utilities {
-  .text-orange {
-    color: var(--color-orange);
-  }
+@theme {
+  --color-white: white;
+  --color-black: black;
+  --color-orange: #F05E1D;
+  --color-dark-orange: #D84E1A;
+  --color-light-orange: #F05E1D/10;
   
-  .bg-orange {
-    background-color: var(--color-orange);
-  }
-  
-  .border-orange {
-    border-color: var(--color-orange);
-  }
-  
-  .hover\:bg-orange:hover {
-    background-color: var(--color-orange);
-  }
-  
-  .hover\:text-orange:hover {
-    color: var(--color-orange);
-  }
-  
-  .hover\:border-orange:hover {
-    border-color: var(--color-orange);
-  }
-  
-  .bg-dark-orange {
-    background-color: var(--color-dark-orange);
-  }
-  
-  .hover\:bg-dark-orange:hover {
-    background-color: var(--color-dark-orange);
-  }
-  
-  .bg-light-orange {
-    background-color: var(--color-light-orange);
-  }
-  
-  .hover\:bg-light-orange:hover {
-    background-color: var(--color-light-orange);
-  }
-
-  .fill-orange {
-    fill: var(--color-orange);
-  }
-
-  .group:hover .group-hover\:fill-orange {
-    fill: var(--color-orange);
-  }
-
-  .group:hover .group-hover\:stroke-orange {
-    stroke: var(--color-orange);
-  }
+  --color-light: var(--color-white);
+  --color-dark: var(--color-black);
 }
 
 @layer {
