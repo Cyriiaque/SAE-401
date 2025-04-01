@@ -2,7 +2,7 @@ import { Tweet, fetchReplies, createReply, Reply, getLikeStatus, getImageUrl } f
 import { useState, useEffect, useRef } from 'react';
 import { likePost } from '../lib/loaders';
 import { useAuth } from '../contexts/AuthContext';
-import EditPostModal from './EditPostModal';
+import PostModal from './PostModal';
 import Button from '../ui/buttons';
 
 interface TweetCardProps {
@@ -789,11 +789,12 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
       )}
 
       {isEditModalOpen && (
-        <EditPostModal
+        <PostModal
           tweet={currentTweet}
           onClose={() => setIsEditModalOpen(false)}
           onPostUpdated={handlePostUpdated}
           isOpen={isEditModalOpen}
+          mode="edit"
         />
       )}
     </div>

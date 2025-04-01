@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 import { Tweet } from '../lib/loaders';
-import EditPostModal from '../components/EditPostModal';
+import EditPostModal from '../components/PostModal';
 
 interface PostModalContextType {
     openPostModal: () => void;

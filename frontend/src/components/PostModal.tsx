@@ -1,41 +1,85 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
-import { createPost, Tweet, uploadImage, deleteMediaFile } from '../lib/loaders';
+import { useState, useRef, useEffect } from 'react';
+import { Tweet, uploadImage, getImageUrl, updatePost, createPost, deleteMediaFile } from '../lib/loaders';
 
 interface PostModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onTweetPublished: (tweet: Tweet) => void;
+    tweet?: Tweet;
+    onPostUpdated?: (updatedTweet: Tweet) => void;
+    onTweetPublished?: (tweet: Tweet) => void;
+    mode?: 'edit' | 'create';
 }
 
-export default function PostModal({ isOpen, onClose, onTweetPublished }: PostModalProps) {
-    const [content, setContent] = useState('');
+// Ajouter un type augmenté pour HTMLVideoElement avec captureStream
+interface HTMLVideoElementWithCapture extends HTMLVideoElement {
+    captureStream?: () => MediaStream;
+}
+
+export default function PostModal({
+    isOpen,
+    onClose,
+    tweet,
+    onPostUpdated,
+    onTweetPublished,
+    mode = 'edit'
+}: PostModalProps) {
+    const [content, setContent] = useState(tweet?.content || '');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [media, setMedia] = useState<File[]>([]);
     const [mediaPreviews, setMediaPreviews] = useState<string[]>([]);
     const [mediaTypes, setMediaTypes] = useState<('image' | 'video')[]>([]);
-    const [isMediaLoading, setIsMediaLoading] = useState(false);
-    const [mediaImportOpen, setMediaImportOpen] = useState(false);
-    const [selectedFile, setSelectedFile] = useState<File | null>(null);
-    const [selectedFilePreview, setSelectedFilePreview] = useState<string | null>(null);
-
+    const [existingMediaUrls, setExistingMediaUrls] = useState<string[]>([]);
+    const [processingFiles, setProcessingFiles] = useState<Record<string, {
+        id: string,
+        name: string,
+        progress: number,
+        cancel: () => void
+    }>>({});
+    const [mediaToDelete, setMediaToDelete] = useState<string[]>([]);
     const maxLength = 280;
     const maxMediaCount = 10;
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const modalRef = useRef<HTMLDivElement>(null);
 
-    // Effet pour bloquer/débloquer le scroll du body
+    // Obtenir le titre de la modal selon le mode
+    const getModalTitle = () => {
+        return mode === 'edit' ? 'Modifier le tweet' : 'Créer un tweet';
+    };
+
+    // Charger les données du post à modifier si mode édition
     useEffect(() => {
-        if (isOpen || mediaImportOpen) {
-            document.body.style.overflow = 'hidden';
-        } else {
-            document.body.style.overflow = 'unset';
-        }
+        if (tweet && isOpen && mode === 'edit') {
+            setContent(tweet.content);
 
-        // Nettoyer l'effet lors du démontage
-        return () => {
-            document.body.style.overflow = 'unset';
-        };
-    }, [isOpen, mediaImportOpen]);
+            // Charger les médias existants
+            if (tweet.mediaUrl) {
+                const mediaUrls = tweet.mediaUrl.split(',');
+                setExistingMediaUrls(mediaUrls);
+
+                // Préparer les prévisualisations et les types de médias
+                const previews: string[] = [];
+                const types: ('image' | 'video')[] = [];
+
+                mediaUrls.forEach(url => {
+                    const isVideo = url.match(/\.(mp4|webm|ogg)$/i);
+                    previews.push(getImageUrl(url));
+                    types.push(isVideo ? 'video' : 'image');
+                    console.log(`Media existant chargé: ${url}, type: ${isVideo ? 'video' : 'image'}`);
+                });
+
+                setMediaPreviews(previews);
+                setMediaTypes(types);
+                console.log(`Total médias existants chargés: ${mediaUrls.length}, types: ${types.join(', ')}`);
+            }
+        } else if (isOpen && mode === 'create') {
+            // Réinitialiser les champs pour une nouvelle création
+            setContent('');
+            setMedia([]);
+            setMediaPreviews([]);
+            setMediaTypes([]);
+            setExistingMediaUrls([]);
+            setMediaToDelete([]);
+        }
+    }, [tweet, isOpen, mode]);
 
     // Fonction pour compresser une image
     const compressImage = (file: File, maxSizeInMB: number = 1): Promise<File> => {
@@ -94,665 +138,1100 @@ export default function PostModal({ isOpen, onClose, onTweetPublished }: PostMod
 
     // Fonction pour compresser une vidéo
     const compressVideo = async (file: File, maxSizeInMB: number = 50): Promise<File> => {
+        console.log(`Début de compression vidéo pour ${file.name} (${Math.round(file.size / (1024 * 1024))}Mo)...`);
+        const maxSizeInBytes = maxSizeInMB * 1024 * 1024;
+
+        // Si le fichier est déjà assez petit, on le retourne directement
+        if (file.size <= maxSizeInBytes) {
+            console.log(`Le fichier est déjà en dessous de la limite de ${maxSizeInMB}Mo.`);
+            return file;
+        }
+
+        // Calculer le bitrate cible en fonction de la taille actuelle
+        let targetBitrate = 1000000; // Par défaut 1 Mbps
+        const currentSize = file.size / (1024 * 1024); // Taille en Mo
+
+        // Ajuster le bitrate en fonction de la taille actuelle
+        if (currentSize > 100) {
+            targetBitrate = 500000; // 500 Kbps pour les fichiers très volumineux
+        } else if (currentSize > 75) {
+            targetBitrate = 800000; // 800 Kbps
+        } else if (currentSize > 50) {
+            targetBitrate = 1000000; // 1 Mbps
+        }
+
+        console.log(`Bitrate cible pour la compression: ${targetBitrate / 1000} Kbps`);
+
         return new Promise((resolve, reject) => {
-            // Si la taille est déjà correcte, on retourne le fichier directement
-            if (file.size <= maxSizeInMB * 1024 * 1024) {
-                resolve(file);
-                return;
-            }
+            try {
+                // Créer une URL pour la vidéo
+                const videoURL = URL.createObjectURL(file);
+                const videoElement = document.createElement('video');
 
-            const video = document.createElement('video');
-            video.crossOrigin = "anonymous"; // Ajout de crossOrigin pour éviter les problèmes CORS
-            const fileUrl = URL.createObjectURL(file);
-            video.src = fileUrl;
+                // Stocker des références pour pouvoir les libérer plus tard
+                const createdObjectURLs = [videoURL];
 
-            // Ajouter un timeout pour éviter que la promesse ne reste bloquée
-            const timeout = setTimeout(() => {
-                URL.revokeObjectURL(fileUrl);
-                reject(new Error('Délai d\'attente dépassé pour charger la vidéo'));
-            }, 15000); // 15 secondes max pour charger la vidéo
+                videoElement.muted = false;
+                videoElement.autoplay = false;
+                videoElement.preload = 'metadata';
+                videoElement.src = videoURL;
 
-            video.onloadedmetadata = () => {
-                clearTimeout(timeout);
+                videoElement.onloadedmetadata = async () => {
+                    try {
+                        // Réduire la résolution pour les fichiers volumineux
+                        let width = videoElement.videoWidth;
+                        let height = videoElement.videoHeight;
+                        let reduceResolution = false;
 
-                try {
-                    // Calculer le bitrate adapté en fonction de la taille actuelle
-                    // Plus le fichier est gros, plus on réduit le bitrate
-                    const currentSizeMB = file.size / (1024 * 1024);
-                    // Bitrate de base (1 Mbps)
-                    let targetBitrate = 1000000;
+                        if (currentSize > 75) {
+                            // Réduire la résolution de moitié pour les fichiers très volumineux
+                            width = Math.floor(width / 2);
+                            height = Math.floor(height / 2);
+                            reduceResolution = true;
+                            console.log(`Réduction de la résolution: ${videoElement.videoWidth}x${videoElement.videoHeight} -> ${width}x${height}`);
+                        }
 
-                    // Ajustement progressif du bitrate en fonction de la taille
-                    const ratio = maxSizeInMB / currentSizeMB;
+                        const canvas = document.createElement('canvas');
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
 
-                    // Si le fichier est très volumineux, on réduit davantage le bitrate
-                    if (currentSizeMB > 100) {
-                        targetBitrate = 500000; // 500 Kbps pour les vidéos très volumineuses
-                    } else if (currentSizeMB > 75) {
-                        targetBitrate = 750000; // 750 Kbps
-                    } else {
-                        // Ajuster proportionnellement tout en restant entre 500 Kbps et 1 Mbps
-                        targetBitrate = Math.max(500000, Math.min(1000000, targetBitrate * ratio));
-                    }
+                        if (!ctx) {
+                            throw new Error("Impossible de créer le contexte canvas");
+                        }
 
-                    const canvas = document.createElement('canvas');
-                    const ctx = canvas.getContext('2d');
-                    if (!ctx) {
-                        URL.revokeObjectURL(fileUrl);
-                        reject(new Error('Impossible de créer le contexte de canvas pour la compression vidéo'));
-                        return;
-                    }
+                        const stream = canvas.captureStream(30);
 
-                    // Réduire la résolution pour les vidéos très volumineuses
-                    let width = video.videoWidth;
-                    let height = video.videoHeight;
-
-                    if (currentSizeMB > 100) {
-                        // Réduire la résolution de 50% pour les fichiers très volumineux
-                        width = Math.floor(width * 0.5);
-                        height = Math.floor(height * 0.5);
-                    } else if (currentSizeMB > 75) {
-                        // Réduire la résolution de 25% pour les fichiers volumineux
-                        width = Math.floor(width * 0.75);
-                        height = Math.floor(height * 0.75);
-                    }
-
-                    canvas.width = width;
-                    canvas.height = height;
-
-                    // Certains navigateurs peuvent ne pas supporter certains codecs
-                    let mimeType = 'video/webm;codecs=vp9';
-                    if (!MediaRecorder.isTypeSupported(mimeType)) {
-                        mimeType = 'video/webm;codecs=vp8';
-                        if (!MediaRecorder.isTypeSupported(mimeType)) {
-                            mimeType = 'video/webm';
-                            if (!MediaRecorder.isTypeSupported(mimeType)) {
-                                URL.revokeObjectURL(fileUrl);
-                                reject(new Error('Le navigateur ne supporte pas les codecs vidéo nécessaires'));
-                                return;
+                        // Ajouter une piste audio si la vidéo originale en a une
+                        const captureStream = (videoElement as HTMLVideoElementWithCapture).captureStream;
+                        if (captureStream && typeof captureStream === 'function') {
+                            const stream = captureStream.call(videoElement);
+                            if (stream && stream.getAudioTracks().length > 0) {
+                                const audioTrack = stream.getAudioTracks()[0];
+                                if (audioTrack) {
+                                    stream.addTrack(audioTrack);
+                                }
                             }
                         }
-                    }
 
-                    try {
-                        const stream = canvas.captureStream();
-                        const mediaRecorder = new MediaRecorder(stream, {
-                            mimeType: mimeType,
+                        // Options de compression
+                        const options = {
+                            mimeType: 'video/webm;codecs=vp9',
+                            audioBitsPerSecond: 128000,
                             videoBitsPerSecond: targetBitrate
-                        });
+                        };
 
-                        const chunks: BlobPart[] = [];
-                        mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
+                        // Vérifier le support du format
+                        if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                            options.mimeType = 'video/webm;codecs=vp8';
 
-                        mediaRecorder.onstop = () => {
-                            URL.revokeObjectURL(fileUrl); // Libérer les ressources
+                            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                                options.mimeType = 'video/webm';
+
+                                if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                                    throw new Error("Format vidéo non supporté pour la compression");
+                                }
+                            }
+                        }
+
+                        console.log(`Utilisation du format: ${options.mimeType} pour la compression`);
+
+                        const recorder = new MediaRecorder(stream, options);
+                        const chunks: Blob[] = [];
+                        let isRecording = false;
+                        let recordingTimeout: number | null = null;
+
+                        // Maximum 30 secondes d'enregistrement pour les vidéos très longues
+                        const maxRecordingTime = 30000; // 30 secondes
+
+                        recorder.ondataavailable = (e) => {
+                            if (e.data.size > 0) {
+                                chunks.push(e.data);
+                            }
+                        };
+
+                        recorder.onstop = async () => {
+                            // Nettoyer le timeout si existant
+                            if (recordingTimeout) {
+                                clearTimeout(recordingTimeout);
+                                recordingTimeout = null;
+                            }
+
+                            isRecording = false;
+                            videoElement.pause();
 
                             try {
-                                const blob = new Blob(chunks, { type: mimeType });
-                                const compressedFile = new File([blob], file.name.replace(/\.[^/.]+$/, '.webm'), {
-                                    type: mimeType,
-                                    lastModified: Date.now()
-                                });
+                                // Créer un blob avec les chunks enregistrés
+                                const blob = new Blob(chunks, { type: options.mimeType });
 
-                                if (compressedFile.size <= maxSizeInMB * 1024 * 1024) {
-                                    resolve(compressedFile);
+                                const compressedSize = blob.size / (1024 * 1024);
+                                console.log(`Compression terminée: ${Math.round(file.size / (1024 * 1024))}Mo -> ${compressedSize.toFixed(2)}Mo`);
+
+                                // Si la taille est toujours trop grande et qu'on n'a pas déjà réduit la résolution, 
+                                // recommencer avec une résolution réduite
+                                if (blob.size > maxSizeInBytes && !reduceResolution) {
+                                    console.log(`Taille encore trop grande (${compressedSize.toFixed(2)}Mo), nouvel essai avec résolution réduite...`);
+
+                                    // Nettoyer les ressources actuelles
+                                    createdObjectURLs.forEach(url => URL.revokeObjectURL(url));
+
+                                    // Récursion avec résolution réduite forcée
+                                    try {
+                                        const retryCompression = async () => {
+                                            const newWidth = Math.floor(videoElement.videoWidth / 2);
+                                            const newHeight = Math.floor(videoElement.videoHeight / 2);
+
+                                            canvas.width = newWidth;
+                                            canvas.height = newHeight;
+
+                                            const newOptions = {
+                                                ...options,
+                                                videoBitsPerSecond: targetBitrate / 2
+                                            };
+
+                                            console.log(`Nouvel essai avec résolution: ${newWidth}x${newHeight} et bitrate: ${newOptions.videoBitsPerSecond / 1000} Kbps`);
+
+                                            const newStream = canvas.captureStream(30);
+
+                                            // Ajouter une piste audio si la vidéo originale en a une
+                                            const captureStream = (videoElement as HTMLVideoElementWithCapture).captureStream;
+                                            if (captureStream && typeof captureStream === 'function') {
+                                                const stream = captureStream.call(videoElement);
+                                                if (stream && stream.getAudioTracks().length > 0) {
+                                                    const audioTrack = stream.getAudioTracks()[0];
+                                                    if (audioTrack) {
+                                                        newStream.addTrack(audioTrack);
+                                                    }
+                                                }
+                                            }
+
+                                            const newRecorder = new MediaRecorder(newStream, newOptions);
+                                            const newChunks: Blob[] = [];
+
+                                            newRecorder.ondataavailable = (e) => {
+                                                if (e.data.size > 0) {
+                                                    newChunks.push(e.data);
+                                                }
+                                            };
+
+                                            newRecorder.onstop = () => {
+                                                const newBlob = new Blob(newChunks, { type: options.mimeType });
+                                                const newCompressedSize = newBlob.size / (1024 * 1024);
+                                                console.log(`Deuxième compression terminée: ${compressedSize.toFixed(2)}Mo -> ${newCompressedSize.toFixed(2)}Mo`);
+
+                                                // Créer un fichier à partir du blob et résoudre
+                                                const compressedFile = new File([newBlob], file.name, {
+                                                    type: options.mimeType,
+                                                    lastModified: new Date().getTime()
+                                                });
+
+                                                // Libérer les ressources
+                                                createdObjectURLs.forEach(url => URL.revokeObjectURL(url));
+
+                                                resolve(compressedFile);
+                                            };
+
+                                            // Démarrer l'enregistrement
+                                            videoElement.currentTime = 0;
+                                            videoElement.play();
+
+                                            const drawFrame = () => {
+                                                if (videoElement.paused || videoElement.ended) return;
+                                                ctx.drawImage(videoElement, 0, 0, newWidth, newHeight);
+                                                requestAnimationFrame(drawFrame);
+                                            };
+
+                                            videoElement.onplay = () => {
+                                                drawFrame();
+                                                newRecorder.start(100);
+
+                                                // Arrêter après la durée de la vidéo ou 30 secondes maximum
+                                                setTimeout(() => {
+                                                    if (newRecorder.state === 'recording') {
+                                                        newRecorder.stop();
+                                                    }
+                                                }, Math.min(videoElement.duration * 1000, maxRecordingTime));
+                                            };
+                                        };
+
+                                        await retryCompression();
+                                    } catch (error) {
+                                        console.error("Erreur lors de la seconde compression:", error);
+
+                                        // Si la deuxième compression échoue, on utilise quand même le résultat de la première
+                                        const compressedFile = new File([blob], file.name, {
+                                            type: options.mimeType,
+                                            lastModified: new Date().getTime()
+                                        });
+
+                                        // Libérer les ressources
+                                        createdObjectURLs.forEach(url => URL.revokeObjectURL(url));
+
+                                        resolve(compressedFile);
+                                    }
                                 } else {
-                                    // Si la compression n'est pas suffisante, on réessaie avec un bitrate plus faible
-                                    console.log(`Compression insuffisante: ${(compressedFile.size / (1024 * 1024)).toFixed(2)} Mo. Nouvel essai...`);
+                                    // Créer un fichier à partir du blob et résoudre
+                                    const compressedFile = new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".webm", {
+                                        type: options.mimeType,
+                                        lastModified: new Date().getTime()
+                                    });
 
-                                    // Récursivement, on essaie de compresser davantage
-                                    const retryCompression = async () => {
-                                        try {
-                                            const moreCompressed = await compressVideo(compressedFile, maxSizeInMB);
-                                            resolve(moreCompressed);
-                                        } catch (error) {
-                                            reject(error);
-                                        }
-                                    };
+                                    // Libérer les ressources
+                                    createdObjectURLs.forEach(url => URL.revokeObjectURL(url));
 
-                                    retryCompression();
+                                    resolve(compressedFile);
                                 }
-                            } catch (blobError) {
-                                console.error('Erreur lors de la création du blob:', blobError);
-                                reject(new Error('Impossible de créer le fichier compressé'));
+                            } catch (error) {
+                                console.error("Erreur de traitement post-compression:", error);
+
+                                // Libérer les ressources
+                                createdObjectURLs.forEach(url => URL.revokeObjectURL(url));
+
+                                reject(error);
                             }
                         };
 
-                        ctx.drawImage(video, 0, 0, width, height);
-                        mediaRecorder.start();
-                        video.play();
+                        const startRecording = () => {
+                            if (isRecording) return;
 
-                        video.onended = () => {
-                            if (mediaRecorder.state === 'recording') {
-                                mediaRecorder.stop();
-                            }
+                            isRecording = true;
+                            chunks.length = 0;  // Vider les chunks précédents
+
+                            recorder.start(100);  // Capturer des chunks toutes les 100ms
+
+                            // Arrêter après la durée de la vidéo ou 30 secondes maximum
+                            recordingTimeout = window.setTimeout(() => {
+                                if (recorder.state === 'recording') {
+                                    console.log(`La vidéo est toujours en cours d'enregistrement après ${maxRecordingTime / 1000}s`);
+                                    // Ne pas arrêter automatiquement, continuer l'enregistrement
+                                }
+                            }, maxRecordingTime);
                         };
 
-                        // Pour les vidéos longues, on arrête après 30 secondes pour éviter des fichiers trop lourds
-                        setTimeout(() => {
-                            if (mediaRecorder.state === 'recording') {
-                                mediaRecorder.stop();
-                            }
-                        }, 30000);
-                    } catch (recorderError) {
-                        URL.revokeObjectURL(fileUrl);
-                        console.error('Erreur lors de l\'initialisation du MediaRecorder:', recorderError);
-                        reject(new Error('Échec de la compression vidéo - erreur technique'));
-                    }
-                } catch (error) {
-                    URL.revokeObjectURL(fileUrl);
-                    console.error('Erreur générale de compression vidéo:', error);
-                    reject(error);
-                }
-            };
-
-            video.onerror = (error) => {
-                clearTimeout(timeout);
-                URL.revokeObjectURL(fileUrl);
-                console.error('Erreur lors du chargement de la vidéo:', error);
-                reject(new Error('Format vidéo non supporté'));
-            };
-        });
-    };
-
-    // Ajout d'une fonction d'aide pour tenter de convertir les vidéos problématiques
-    const tryConvertVideo = async (file: File): Promise<File> => {
-        return new Promise((resolve, reject) => {
-            // Si ce n'est pas une vidéo, retourner le fichier tel quel
-            if (!file.type.startsWith('video/')) {
-                resolve(file);
-                return;
-            }
-
-            console.log(`Tentative de conversion de la vidéo ${file.name} (${file.type})...`);
-
-            // Créer un élément vidéo pour lire le fichier
-            const video = document.createElement('video');
-            video.crossOrigin = "anonymous";
-
-            // Créer un canvas pour capturer les frames de la vidéo
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-
-            if (!ctx) {
-                reject(new Error('Contexte de canvas non disponible'));
-                return;
-            }
-
-            const fileUrl = URL.createObjectURL(file);
-
-            // Définir un timeout pour éviter les blocages
-            const timeout = setTimeout(() => {
-                URL.revokeObjectURL(fileUrl);
-                reject(new Error('Délai d\'attente dépassé lors de la tentative de conversion'));
-            }, 15000);
-
-            video.onloadedmetadata = () => {
-                clearTimeout(timeout);
-
-                try {
-                    // Vérifier si la vidéo a des dimensions valides
-                    if (video.videoWidth === 0 || video.videoHeight === 0) {
-                        URL.revokeObjectURL(fileUrl);
-                        reject(new Error('Vidéo avec dimensions invalides'));
-                        return;
-                    }
-
-                    // Configurer le canvas aux dimensions de la vidéo
-                    canvas.width = video.videoWidth;
-                    canvas.height = video.videoHeight;
-
-                    // Trouver un format supporté
-                    let mimeType = 'video/webm';
-                    if (!MediaRecorder.isTypeSupported(mimeType)) {
-                        mimeType = 'video/mp4';
-                        if (!MediaRecorder.isTypeSupported(mimeType)) {
-                            URL.revokeObjectURL(fileUrl);
-                            reject(new Error('Aucun format vidéo supporté par le navigateur'));
-                            return;
-                        }
-                    }
-
-                    // Créer un stream à partir du canvas
-                    const stream = canvas.captureStream();
-
-                    // Créer un MediaRecorder pour enregistrer le stream
-                    const mediaRecorder = new MediaRecorder(stream, {
-                        mimeType: mimeType,
-                        videoBitsPerSecond: 1500000 // 1.5 Mbps
-                    });
-
-                    const chunks: BlobPart[] = [];
-                    mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
-
-                    mediaRecorder.onstop = () => {
-                        URL.revokeObjectURL(fileUrl);
-
-                        try {
-                            const blob = new Blob(chunks, { type: mimeType });
-                            const extension = mimeType === 'video/webm' ? '.webm' : '.mp4';
-                            const convertedFile = new File([blob], file.name.replace(/\.[^/.]+$/, extension), {
-                                type: mimeType,
-                                lastModified: Date.now()
-                            });
-
-                            resolve(convertedFile);
-                        } catch (error) {
-                            reject(error);
-                        }
-                    };
-
-                    // Dessiner la vidéo sur le canvas et commencer l'enregistrement
-                    mediaRecorder.start();
-
-                    // Dessiner chaque frame de la vidéo sur le canvas
-                    video.onplay = () => {
                         const drawFrame = () => {
-                            if (video.paused || video.ended) {
-                                mediaRecorder.stop();
+                            if (videoElement.paused || videoElement.ended) {
+                                if (isRecording && recorder.state === 'recording') {
+                                    recorder.stop();
+                                }
                                 return;
                             }
 
-                            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                            ctx.drawImage(videoElement, 0, 0, width, height);
                             requestAnimationFrame(drawFrame);
                         };
 
-                        drawFrame();
-                    };
+                        videoElement.onplay = () => {
+                            drawFrame();
+                            startRecording();
+                        };
 
-                    // Limiter la durée de conversion
-                    setTimeout(() => {
-                        if (mediaRecorder.state === 'recording') {
-                            mediaRecorder.stop();
-                        }
-                    }, 30000); // 30 secondes maximum
-
-                    // Démarrer la lecture de la vidéo
-                    video.play();
-                } catch (error) {
-                    URL.revokeObjectURL(fileUrl);
-                    clearTimeout(timeout);
-                    reject(error);
-                }
-            };
-
-            video.onerror = () => {
-                clearTimeout(timeout);
-                URL.revokeObjectURL(fileUrl);
-                reject(new Error('Erreur lors du chargement de la vidéo pour conversion'));
-            };
-
-            video.src = fileUrl;
-        });
-    };
-
-    const openMediaImport = () => {
-        if (media.length >= maxMediaCount) {
-            alert(`Vous ne pouvez pas ajouter plus de ${maxMediaCount} médias.`);
-            return;
-        }
-        setMediaImportOpen(true);
-        setSelectedFile(null);
-        setSelectedFilePreview(null);
-    };
-
-    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (file) {
-            setIsMediaLoading(true);
-
-            try {
-                const isVideo = file.type.startsWith('video/');
-                let processedFile = file;
-
-                // Compression si nécessaire
-                if (isVideo) {
-                    processedFile = await compressVideo(file, 50);
-                } else if (file.size > 1 * 1024 * 1024) {
-                    processedFile = await compressImage(file, 1);
-                }
-
-                const mediaUrl = URL.createObjectURL(processedFile);
-
-                if (isVideo) {
-                    const videoElement = document.createElement('video');
-                    videoElement.crossOrigin = "anonymous";
-
-                    const videoLoadPromise = new Promise<void>((resolve, reject) => {
-                        const timeout = setTimeout(() => {
-                            URL.revokeObjectURL(mediaUrl);
-                            reject(new Error(`Délai d'attente dépassé pour le chargement de la vidéo`));
-                        }, 10000);
-
-                        videoElement.onloadedmetadata = () => {
-                            clearTimeout(timeout);
-                            try {
-                                if (videoElement.duration === Infinity || isNaN(videoElement.duration) || videoElement.duration === 0) {
-                                    URL.revokeObjectURL(mediaUrl);
-                                    reject(new Error(`Format vidéo non supporté ou corrompu (durée non valide)`));
-                                    return;
-                                }
-
-                                if (videoElement.videoWidth === 0 || videoElement.videoHeight === 0) {
-                                    URL.revokeObjectURL(mediaUrl);
-                                    reject(new Error(`Format vidéo non supporté ou corrompu (dimensions non valides)`));
-                                    return;
-                                }
-
-                                setSelectedFile(processedFile);
-                                setSelectedFilePreview(mediaUrl);
-                                resolve();
-                            } catch (e) {
-                                URL.revokeObjectURL(mediaUrl);
-                                reject(e);
+                        videoElement.onended = () => {
+                            if (isRecording && recorder.state === 'recording') {
+                                recorder.stop();
                             }
                         };
 
-                        videoElement.onerror = () => {
-                            clearTimeout(timeout);
-                            URL.revokeObjectURL(mediaUrl);
-                            reject(new Error('Format vidéo non supporté'));
-                        };
-                    });
+                        // Démarrer la lecture
+                        videoElement.currentTime = 0;
+                        videoElement.play().catch(error => {
+                            console.error("Erreur lors de la lecture de la vidéo:", error);
 
-                    videoElement.src = mediaUrl;
-                    await videoLoadPromise;
-                } else {
-                    const imgElement = new Image();
+                            // Libérer les ressources
+                            createdObjectURLs.forEach(url => URL.revokeObjectURL(url));
 
-                    const imageLoadPromise = new Promise<void>((resolve, reject) => {
-                        const timeout = setTimeout(() => {
-                            URL.revokeObjectURL(mediaUrl);
-                            reject(new Error('Délai d\'attente dépassé pour le chargement de l\'image'));
-                        }, 5000);
+                            reject(error);
+                        });
+                    } catch (error) {
+                        console.error("Erreur lors de la compression:", error);
 
-                        imgElement.onload = () => {
-                            clearTimeout(timeout);
-                            setSelectedFile(processedFile);
-                            setSelectedFilePreview(mediaUrl);
-                            resolve();
-                        };
+                        // Libérer les ressources
+                        createdObjectURLs.forEach(url => URL.revokeObjectURL(url));
 
-                        imgElement.onerror = () => {
-                            clearTimeout(timeout);
-                            URL.revokeObjectURL(mediaUrl);
-                            reject(new Error('Image invalide'));
-                        };
-                    });
-
-                    imgElement.src = mediaUrl;
-                    await imageLoadPromise;
-                }
-            } catch (error) {
-                console.error('Erreur lors du traitement du fichier:', error);
-
-                // Si c'est une erreur vidéo, essayer de convertir
-                if (file.type.startsWith('video/')) {
-                    try {
-                        console.log('Tentative de conversion de la vidéo en format alternatif...');
-                        const convertedFile = await tryConvertVideo(file);
-                        const newMediaUrl = URL.createObjectURL(convertedFile);
-
-                        setSelectedFile(convertedFile);
-                        setSelectedFilePreview(newMediaUrl);
-                        console.log('Conversion vidéo réussie!');
-                    } catch (conversionError) {
-                        console.error('Échec de la conversion vidéo:', conversionError);
-                        alert('Impossible de traiter cette vidéo. Veuillez en choisir une autre.');
+                        reject(error);
                     }
-                } else {
-                    alert('Impossible de traiter ce fichier. Veuillez en choisir un autre.');
-                }
-            } finally {
-                setIsMediaLoading(false);
+                };
+
+                videoElement.onerror = (event) => {
+                    console.error("Erreur lors du chargement de la vidéo:", event);
+
+                    // Libérer les ressources
+                    createdObjectURLs.forEach(url => URL.revokeObjectURL(url));
+
+                    reject(new Error("Erreur de chargement vidéo"));
+                };
+            } catch (error) {
+                console.error("Erreur lors de l'initialisation de la compression:", error);
+                reject(error);
             }
-        }
+        });
     };
 
-    const handleImportConfirm = () => {
-        if (!selectedFile || !selectedFilePreview) return;
+    // Correction de la fonction tryConvertVideo
+    const tryConvertVideo = async (file: File): Promise<File> => {
+        console.log("Tentative de conversion de la vidéo en format alternatif...");
 
-        const isVideo = selectedFile.type.startsWith('video/');
+        // Limiter la taille maximale pour la conversion
+        const MAX_SIZE_FOR_CONVERSION = 50 * 1024 * 1024; // 50 Mo
+        if (file.size > MAX_SIZE_FOR_CONVERSION) {
+            console.log(`Vidéo trop volumineuse pour la conversion: ${Math.round(file.size / (1024 * 1024))}Mo > ${MAX_SIZE_FOR_CONVERSION / (1024 * 1024)}Mo`);
+            // Pour les fichiers très gros, on tente une compression directe au lieu de la conversion
+            try {
+                const compressed = await compressVideo(file);
+                console.log(`Compression directe réussie: ${Math.round(file.size / (1024 * 1024))}Mo -> ${Math.round(compressed.size / (1024 * 1024))}Mo`);
+                return compressed;
+            } catch (compressError) {
+                console.error("Échec de la compression directe:", compressError);
+                throw new Error("Échec du traitement de la vidéo volumineuse");
+            }
+        }
 
-        setMedia(prev => [...prev, selectedFile]);
-        setMediaPreviews(prev => [...prev, selectedFilePreview]);
-        setMediaTypes(prev => [...prev, isVideo ? 'video' : 'image']);
+        return new Promise((resolve, reject) => {
+            try {
+                // Récupérer l'extension du fichier
+                const fileExt = file.name.split('.').pop()?.toLowerCase() || '';
+                console.log(`Extension de fichier détectée: ${fileExt}`);
 
-        // Réinitialiser les états de sélection
-        setSelectedFile(null);
-        setSelectedFilePreview(null);
-        setMediaImportOpen(false);
+                // Créer un élément vidéo pour l'analyse
+                const videoElement = document.createElement('video');
+                videoElement.muted = false;
+                videoElement.preload = 'metadata';
+
+                // Créer une URL pour le fichier vidéo
+                const videoURL = URL.createObjectURL(file);
+                videoElement.src = videoURL;
+
+                // Garder une référence aux ressources pour les libérer plus tard
+                const resources = {
+                    urls: [videoURL],
+                    timeouts: [] as number[],
+                    videoElement: videoElement,
+                    cleanupCalled: false
+                };
+
+                // Fonction pour révoquer les URL en toute sécurité
+                const safeRevokeUrl = () => {
+                    resources.urls.forEach(url => {
+                        try {
+                            URL.revokeObjectURL(url);
+                            console.log(`URL révoquée: ${url.substring(0, 30)}...`);
+                        } catch (error) {
+                            console.error(`Erreur lors de la révocation d'URL: ${error}`);
+                        }
+                    });
+                    resources.urls = [];
+                };
+
+                // Fonction pour nettoyer toutes les ressources
+                const cleanupResources = () => {
+                    if (resources.cleanupCalled) return;
+                    resources.cleanupCalled = true;
+
+                    console.log("Nettoyage des ressources...");
+
+                    // Arrêter les timeouts
+                    resources.timeouts.forEach(id => window.clearTimeout(id));
+                    resources.timeouts = [];
+
+                    // Arrêter la vidéo si elle est en lecture
+                    if (resources.videoElement) {
+                        try {
+                            resources.videoElement.pause();
+                            resources.videoElement.src = '';
+                            resources.videoElement.load();
+                        } catch (e) {
+                            console.error("Erreur lors du nettoyage de l'élément vidéo:", e);
+                        }
+                    }
+
+                    // Révoquer les URL
+                    safeRevokeUrl();
+                };
+
+                // Gérer le timeout global
+                const timeoutId = window.setTimeout(() => {
+                    console.error("Délai d'attente dépassé pour la conversion vidéo");
+                    cleanupResources();
+                    reject(new Error("Délai d'attente dépassé"));
+                }, 30000); // 30 secondes max
+                resources.timeouts.push(timeoutId);
+
+                // Gestionnaire d'erreur vidéo
+                videoElement.onerror = (event) => {
+                    console.error("Erreur lors du chargement de la vidéo:", event);
+                    cleanupResources();
+                    reject(new Error(`Format vidéo ${fileExt} non supporté par le navigateur`));
+                };
+
+                // Gestionnaire de métadonnées chargées
+                videoElement.onloadedmetadata = () => {
+                    try {
+                        console.log("Métadonnées vidéo chargées, tentative de conversion...");
+
+                        // Créer un canvas pour la conversion
+                        const canvas = document.createElement('canvas');
+                        canvas.width = videoElement.videoWidth;
+                        canvas.height = videoElement.videoHeight;
+
+                        const ctx = canvas.getContext('2d');
+                        if (!ctx) {
+                            throw new Error("Impossible de créer le contexte canvas");
+                        }
+
+                        // Options pour WebM (format largement supporté)
+                        let mimeType = 'video/webm;codecs=vp8';
+                        const stream = canvas.captureStream(30); // 30 FPS
+
+                        // Récupérer la piste audio si disponible
+                        const captureStream = (videoElement as HTMLVideoElementWithCapture).captureStream;
+                        if (captureStream && typeof captureStream === 'function') {
+                            const stream = captureStream.call(videoElement);
+                            if (stream && stream.getAudioTracks().length > 0) {
+                                const audioTrack = stream.getAudioTracks()[0];
+                                if (audioTrack) {
+                                    stream.addTrack(audioTrack);
+                                }
+                            }
+                        }
+
+                        // Options d'enregistrement
+                        const options = {
+                            mimeType: mimeType,
+                            videoBitsPerSecond: 1500000 // 1.5 Mbps
+                        };
+
+                        // Vérifier le support du format
+                        if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                            options.mimeType = 'video/webm'; // Fallback sans codec spécifique
+                        }
+
+                        const recorder = new MediaRecorder(stream, options);
+                        const chunks: Blob[] = [];
+
+                        // Collecter les données
+                        recorder.ondataavailable = (e) => {
+                            if (e.data.size > 0) {
+                                chunks.push(e.data);
+                            }
+                        };
+
+                        // Finaliser lorsque l'enregistrement est terminé
+                        recorder.onstop = () => {
+                            try {
+                                // Vérifier si le nettoyage a déjà été appelé
+                                if (resources.cleanupCalled) return;
+
+                                // Créer un blob avec toutes les données
+                                const blob = new Blob(chunks, { type: options.mimeType });
+                                const convertedFile = new File([blob], file.name.replace(/\.[^/.]+$/, ".webm"), {
+                                    type: options.mimeType,
+                                    lastModified: new Date().getTime()
+                                });
+
+                                // Nettoyer, puis résoudre
+                                cleanupResources();
+                                resolve(convertedFile);
+                            } catch (error) {
+                                console.error("Erreur lors de la création du fichier converti:", error);
+                                cleanupResources();
+                                reject(error);
+                            }
+                        };
+
+                        // Dessiner la vidéo sur le canvas
+                        const drawFrame = () => {
+                            if (videoElement.paused || videoElement.ended) {
+                                if (recorder.state === 'recording') {
+                                    recorder.stop();
+                                }
+                                return;
+                            }
+
+                            ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+                            requestAnimationFrame(drawFrame);
+                        };
+
+                        // Démarrer la lecture et l'enregistrement
+                        videoElement.onplay = () => {
+                            drawFrame();
+                            recorder.start(100);
+
+                            // Limiter l'enregistrement à 30 secondes
+                            const recordingTimeout = window.setTimeout(() => {
+                                if (recorder.state === 'recording') {
+                                    console.log("Arrêt forcé de l'enregistrement après 30s");
+                                    recorder.stop();
+                                }
+                            }, Math.min(30000, videoElement.duration * 1000));
+                            resources.timeouts.push(recordingTimeout);
+                        };
+
+                        // Arrêter l'enregistrement lorsque la vidéo se termine
+                        videoElement.onended = () => {
+                            if (recorder.state === 'recording') {
+                                recorder.stop();
+                            }
+                        };
+
+                        // Jouer la vidéo depuis le début
+                        videoElement.currentTime = 0;
+                        videoElement.play().catch(error => {
+                            console.error("Erreur lors de la lecture de la vidéo:", error);
+                            cleanupResources();
+                            reject(error);
+                        });
+                    } catch (error) {
+                        console.error("Erreur lors de la tentative de conversion:", error);
+                        cleanupResources();
+                        reject(error);
+                    }
+                };
+            } catch (error) {
+                console.error("Erreur d'initialisation de la conversion:", error);
+                reject(error);
+            }
+        });
+    };
+
+    const handleMediaChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (!e.target.files || e.target.files.length === 0) return;
+
+        // Vérifier le nombre total de fichiers (existants + nouveaux)
+        if (existingMediaUrls.length + mediaPreviews.length + e.target.files.length > 10) {
+            alert("Vous ne pouvez pas ajouter plus de 10 fichiers médias au total.");
+            return;
+        }
+
+        // Vérifier les tailles des fichiers originaux (limite absolue pour ne pas bloquer le navigateur)
+        const MAX_ORIGINAL_SIZE = 250 * 1024 * 1024; // 250 Mo maximum par fichier d'origine
+        const oversizedFiles = Array.from(e.target.files).filter(file => file.size > MAX_ORIGINAL_SIZE);
+        if (oversizedFiles.length > 0) {
+            const fileSizes = oversizedFiles.map(f => `${f.name}: ${Math.round(f.size / (1024 * 1024))}Mo`).join(', ');
+            alert(`Les fichiers suivants sont trop volumineux (>${MAX_ORIGINAL_SIZE / (1024 * 1024)}Mo): ${fileSizes}.`);
+            return;
+        }
+
+        try {
+            console.log(`Traitement de ${e.target.files.length} nouveaux fichiers...`);
+
+            // Traiter chaque fichier individuellement
+            const processedFiles: File[] = [];
+            const processedPreviews: string[] = [];
+            const processedTypes: string[] = [];
+
+            // Copie des fichiers pour pouvoir les traiter même après la réinitialisation de l'input
+            const filesToProcess = Array.from(e.target.files);
+            // Reset l'input file pour permettre la sélection des mêmes fichiers
+            e.target.value = '';
+
+            // Traiter chaque fichier séquentiellement pour éviter de surcharger le navigateur
+            for (let i = 0; i < filesToProcess.length; i++) {
+                const file = filesToProcess[i];
+                const fileId = `file-${Date.now()}-${i}`;
+
+                console.log(`Traitement du fichier ${i + 1}/${filesToProcess.length}: ${file.name} (${Math.round(file.size / (1024 * 1024))}Mo)`);
+
+                // Créer un objet d'annulation
+                let cancelProcessing = false;
+                const cancelTokens: number[] = [];
+                let progressInterval = 0; // Initialiser avec 0
+
+                // Ajouter ce fichier à la liste des fichiers en cours de traitement
+                setProcessingFiles(prev => ({
+                    ...prev,
+                    [fileId]: {
+                        id: fileId,
+                        name: file.name,
+                        progress: 0,
+                        cancel: () => {
+                            cancelProcessing = true;
+                            cancelTokens.forEach(id => window.clearTimeout(id));
+                            if (progressInterval) window.clearInterval(progressInterval);
+                            setProcessingFiles(current => {
+                                const updated = { ...current };
+                                delete updated[fileId];
+                                return updated;
+                            });
+                        }
+                    }
+                }));
+
+                try {
+                    let processedFile = file;
+                    const isImage = file.type.startsWith('image/');
+                    const isVideo = file.type.startsWith('video/');
+
+                    // Mise à jour périodique de la progression
+                    progressInterval = window.setInterval(() => {
+                        if (!cancelProcessing) {
+                            setProcessingFiles(prev => {
+                                if (!prev[fileId]) return prev;
+                                return {
+                                    ...prev,
+                                    [fileId]: {
+                                        ...prev[fileId],
+                                        progress: Math.min(prev[fileId].progress + 5, 95) // augmente progressivement mais plafonne à 95%
+                                    }
+                                };
+                            });
+                        }
+                    }, 1000);
+                    cancelTokens.push(progressInterval);
+
+                    // Vérification des limites de taille pour l'upload
+                    const MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50 Mo max après compression
+                    const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5 Mo max après compression
+
+                    // Compresser les vidéos si nécessaire
+                    if (isVideo && file.size > MAX_VIDEO_SIZE) {
+                        console.log(`Compression de la vidéo ${file.name} (${Math.round(file.size / (1024 * 1024))}Mo > ${MAX_VIDEO_SIZE / (1024 * 1024)}Mo)...`);
+
+                        try {
+                            // Vérifier périodiquement si l'opération a été annulée
+                            if (cancelProcessing) {
+                                throw new Error("Traitement annulé par l'utilisateur");
+                            }
+
+                            processedFile = await compressVideo(file);
+
+                            // Vérifier à nouveau si l'opération a été annulée pendant la compression
+                            if (cancelProcessing) {
+                                throw new Error("Traitement annulé par l'utilisateur");
+                            }
+
+                            console.log(`Compression terminée: ${Math.round(file.size / (1024 * 1024))}Mo -> ${Math.round(processedFile.size / (1024 * 1024))}Mo`);
+
+                            // Si toujours trop volumineux, on alerte
+                            if (processedFile.size > MAX_VIDEO_SIZE) {
+                                console.warn(`La vidéo compressée est toujours trop volumineuse: ${Math.round(processedFile.size / (1024 * 1024))}Mo > ${MAX_VIDEO_SIZE / (1024 * 1024)}Mo`);
+                            }
+                        } catch (compressError) {
+                            // Si l'erreur est due à l'annulation, propager l'erreur
+                            if (cancelProcessing || (compressError instanceof Error && compressError.message.includes("annulé"))) {
+                                throw new Error("Traitement annulé par l'utilisateur");
+                            }
+
+                            console.error("Erreur de compression vidéo:", compressError);
+                            throw new Error(`Impossible de compresser la vidéo ${file.name}: ${compressError instanceof Error ? compressError.message : 'Erreur inconnue'}`);
+                        }
+                    }
+
+                    // Compresser les images si nécessaires
+                    if (isImage && file.size > MAX_IMAGE_SIZE) {
+                        console.log(`Compression de l'image ${file.name} (${Math.round(file.size / (1024 * 1024))}Mo > ${MAX_IMAGE_SIZE / (1024 * 1024)}Mo)...`);
+
+                        try {
+                            // Vérifier si l'opération a été annulée
+                            if (cancelProcessing) {
+                                throw new Error("Traitement annulé par l'utilisateur");
+                            }
+
+                            processedFile = await compressImage(file);
+
+                            // Vérifier à nouveau si l'opération a été annulée pendant la compression
+                            if (cancelProcessing) {
+                                throw new Error("Traitement annulé par l'utilisateur");
+                            }
+
+                            console.log(`Compression terminée: ${Math.round(file.size / (1024 * 1024))}Mo -> ${Math.round(processedFile.size / (1024 * 1024))}Mo`);
+                        } catch (compressError) {
+                            // Si l'erreur est due à l'annulation, propager l'erreur
+                            if (cancelProcessing || (compressError instanceof Error && compressError.message.includes("annulé"))) {
+                                throw new Error("Traitement annulé par l'utilisateur");
+                            }
+
+                            console.error("Erreur de compression image:", compressError);
+                            throw new Error(`Impossible de compresser l'image ${file.name}`);
+                        }
+                    }
+
+                    // Créer les URL pour les previews
+                    const objectUrl = URL.createObjectURL(processedFile);
+
+                    // Pour les vidéos, vérifier qu'elles peuvent être lues
+                    if (isVideo) {
+                        console.log(`Vérification de la compatibilité de la vidéo ${file.name}...`);
+
+                        try {
+                            // Vérifier si l'opération a été annulée
+                            if (cancelProcessing) {
+                                URL.revokeObjectURL(objectUrl);
+                                throw new Error("Traitement annulé par l'utilisateur");
+                            }
+
+                            await new Promise<void>((resolve, reject) => {
+                                const videoElement = document.createElement('video');
+                                const loadTimeout = setTimeout(() => {
+                                    console.warn(`Délai dépassé lors du chargement de la vidéo ${file.name}`);
+                                    videoElement.onerror = null;
+                                    videoElement.onloadedmetadata = null;
+                                    reject(new Error("Délai de chargement de la vidéo dépassé"));
+                                }, 20000); // 20 secondes max pour charger
+                                cancelTokens.push(loadTimeout);
+
+                                videoElement.onerror = (event) => {
+                                    clearTimeout(loadTimeout);
+                                    console.error(`Erreur lors du chargement de la vidéo ${file.name}:`, event);
+                                    videoElement.onerror = null;
+                                    videoElement.onloadedmetadata = null;
+                                    reject(new Error(`Format vidéo ${file.type.split('/')[1] || ''} non supporté par le navigateur`));
+                                };
+
+                                videoElement.onloadedmetadata = () => {
+                                    clearTimeout(loadTimeout);
+                                    videoElement.onerror = null;
+                                    videoElement.onloadedmetadata = null;
+
+                                    // Vérifier si l'opération a été annulée pendant le chargement
+                                    if (cancelProcessing) {
+                                        reject(new Error("Traitement annulé par l'utilisateur"));
+                                    } else {
+                                        resolve();
+                                    }
+                                };
+
+                                videoElement.preload = 'metadata';
+                                videoElement.muted = false;
+                                videoElement.src = objectUrl;
+                            });
+
+                            // Vérifier à nouveau si l'opération a été annulée
+                            if (cancelProcessing) {
+                                URL.revokeObjectURL(objectUrl);
+                                throw new Error("Traitement annulé par l'utilisateur");
+                            }
+
+                            console.log(`Vidéo ${file.name} validée avec succès`);
+                        } catch (error) {
+                            console.error(`Erreur lors du traitement du fichier: ${file.name}`, error);
+                            URL.revokeObjectURL(objectUrl);
+
+                            // Si l'erreur est due à l'annulation, propager l'erreur
+                            if (cancelProcessing || (error instanceof Error && error.message.includes("annulé"))) {
+                                throw new Error("Traitement annulé par l'utilisateur");
+                            }
+
+                            // Tenter une conversion si le format n'est pas supporté
+                            console.log("Tentative de conversion de la vidéo en format alternatif...");
+
+                            try {
+                                // Vérifier si l'opération a été annulée
+                                if (cancelProcessing) {
+                                    throw new Error("Traitement annulé par l'utilisateur");
+                                }
+
+                                const convertedFile = await tryConvertVideo(processedFile);
+
+                                // Vérifier à nouveau si l'opération a été annulée
+                                if (cancelProcessing) {
+                                    throw new Error("Traitement annulé par l'utilisateur");
+                                }
+
+                                console.log("Conversion vidéo réussie!");
+
+                                // Remplacer le fichier et créer une nouvelle URL
+                                processedFile = convertedFile;
+                                const newUrl = URL.createObjectURL(convertedFile);
+
+                                // Ajouter aux listes
+                                processedFiles.push(convertedFile);
+                                processedPreviews.push(newUrl);
+                                processedTypes.push('video');
+
+                                // Enlever ce fichier de la liste des fichiers en cours de traitement
+                                if (progressInterval) window.clearInterval(progressInterval);
+                                setProcessingFiles(prev => {
+                                    const updated = { ...prev };
+                                    delete updated[fileId];
+                                    return updated;
+                                });
+
+                                // Passer au fichier suivant
+                                continue;
+                            } catch (conversionError) {
+                                // Si l'erreur est due à l'annulation, propager l'erreur
+                                if (cancelProcessing || (conversionError instanceof Error && conversionError.message.includes("annulé"))) {
+                                    throw new Error("Traitement annulé par l'utilisateur");
+                                }
+
+                                console.error("Échec de la conversion:", conversionError);
+                                throw new Error(`Format vidéo incompatible : ${conversionError instanceof Error ? conversionError.message : 'Erreur inconnue'}`);
+                            }
+                        }
+                    }
+
+                    // Ajouter aux listes si aucune erreur
+                    processedFiles.push(processedFile);
+                    processedPreviews.push(objectUrl);
+                    processedTypes.push(isVideo ? 'video' : 'image');
+
+                    // Enlever ce fichier de la liste des fichiers en cours de traitement
+                    if (progressInterval) window.clearInterval(progressInterval);
+                    setProcessingFiles(prev => {
+                        const updated = { ...prev };
+                        delete updated[fileId];
+                        return updated;
+                    });
+
+                } catch (fileError) {
+                    // Nettoyer les ressources et les intervalles
+                    if (progressInterval) window.clearInterval(progressInterval);
+
+                    // Si l'erreur est due à l'annulation, ne pas afficher d'erreur
+                    if (cancelProcessing || (fileError instanceof Error && fileError.message.includes("annulé"))) {
+                        console.log(`Traitement du fichier ${file.name} annulé par l'utilisateur`);
+
+                        // Enlever ce fichier de la liste des fichiers en cours de traitement
+                        setProcessingFiles(prev => {
+                            const updated = { ...prev };
+                            delete updated[fileId];
+                            return updated;
+                        });
+
+                        continue; // Passer au fichier suivant sans afficher d'erreur
+                    }
+
+                    console.error(`Erreur lors du traitement du fichier individuel:`, fileError);
+
+                    // Enlever ce fichier de la liste des fichiers en cours de traitement
+                    if (progressInterval) window.clearInterval(progressInterval);
+                    setProcessingFiles(prev => {
+                        const updated = { ...prev };
+                        delete updated[fileId];
+                        return updated;
+                    });
+
+                    throw new Error(`Erreur lors du traitement du fichier ${file.name}: ${fileError instanceof Error ? fileError.message : 'Erreur inconnue'}`);
+                }
+            }
+
+            console.log(`${processedFiles.length} fichiers ajoutés avec succès`);
+
+            // Mettre à jour l'état avec tous les nouveaux fichiers
+            setMedia(prev => [...prev, ...processedFiles]);
+            setMediaPreviews(prev => [...prev, ...processedPreviews]);
+            setMediaTypes(prev => [...prev, ...processedTypes as ("image" | "video")[]]);
+
+        } catch (error) {
+            console.error("Erreur globale lors du traitement des médias:", error);
+
+            // Ne pas afficher d'erreur si c'est une annulation par l'utilisateur
+            if (!(error instanceof Error && error.message.includes("annulé"))) {
+                alert(`Erreur: ${error instanceof Error ? error.message : 'Problème lors du traitement des fichiers'}`);
+            }
+        }
     };
 
     const handleRemoveMedia = (index: number) => {
         try {
-            // Avant la suppression, journaliser les états actuels
-            console.log("ÉTATS AVANT SUPPRESSION :");
-            console.log("Index à supprimer:", index);
-            console.log("MediaTypes:", [...mediaTypes]);
-            console.log("MediaPreviews:", [...mediaPreviews]);
-            console.log("Media (fichiers):", [...media]);
-
             // Vérifier si l'index est valide
             if (index < 0 || index >= mediaPreviews.length) {
-                console.error(`Index ${index} hors limites pour la suppression de média`);
                 return;
             }
 
-            // Capture du type de média pour le débogage
-            const mediaType = mediaTypes[index];
-            console.log(`Suppression du média à l'index ${index}, type: ${mediaType}`);
-
-            // Libérer le blob URL pour éviter les fuites de mémoire
-            const previewUrl = mediaPreviews[index];
-            if (previewUrl.startsWith('blob:')) {
-                URL.revokeObjectURL(previewUrl);
-                console.log(`URL blob révoquée: ${previewUrl}`);
-            }
-
             // Mise à jour synchronisée de tous les tableaux
-            setMedia(prev => prev.filter((_, i) => i !== index));
-            setMediaPreviews(prev => prev.filter((_, i) => i !== index));
-            setMediaTypes(prev => prev.filter((_, i) => i !== index));
+            // Approche en deux temps: copie puis mise à jour d'état
 
-            // Après une courte attente, vérifier que les états ont été mis à jour correctement
-            setTimeout(() => {
-                console.log("ÉTATS APRÈS SUPPRESSION :");
-                console.log("MediaTypes:", [...mediaTypes]);
-                console.log("MediaPreviews:", [...mediaPreviews]);
-                console.log("Media (fichiers):", [...media]);
-            }, 100);
+            if (index < existingMediaUrls.length) {
+                // C'est un média existant
+
+                // Récupérer le nom du fichier à supprimer
+                const mediaFilename = existingMediaUrls[index];
+
+                // Ajouter le fichier à la liste des fichiers à supprimer plus tard
+                setMediaToDelete(prev => [...prev, mediaFilename]);
+
+                const newExistingUrls = [...existingMediaUrls];
+                newExistingUrls.splice(index, 1);
+
+                // Mise à jour des trois états importants
+                setExistingMediaUrls(newExistingUrls);
+                setMediaPreviews(prev => {
+                    const newPreviews = [...prev];
+                    newPreviews.splice(index, 1);
+                    return newPreviews;
+                });
+                setMediaTypes(prev => {
+                    const newTypes = [...prev];
+                    newTypes.splice(index, 1);
+                    return newTypes;
+                });
+
+                // Appeler la fonction pour supprimer le fichier du serveur
+                deleteMediaFile(mediaFilename).catch(() => {
+                    // Ignorer les erreurs de suppression pour éviter de bloquer le flux
+                });
+            } else {
+                // C'est un nouveau média
+                const newIndex = index - existingMediaUrls.length;
+
+                // Libérer le blob URL pour éviter les fuites de mémoire
+                const previewUrl = mediaPreviews[index];
+                if (previewUrl.startsWith('blob:')) {
+                    URL.revokeObjectURL(previewUrl);
+                }
+
+                const newMedia = [...media];
+                newMedia.splice(newIndex, 1);
+
+                // Mise à jour des trois états importants
+                setMedia(newMedia);
+                setMediaPreviews(prev => {
+                    const newPreviews = [...prev];
+                    newPreviews.splice(index, 1);
+                    return newPreviews;
+                });
+                setMediaTypes(prev => {
+                    const newTypes = [...prev];
+                    newTypes.splice(index, 1);
+                    return newTypes;
+                });
+            }
         } catch (error) {
-            console.error("Erreur lors de la suppression du média:", error);
+            // Ignorer les erreurs pour éviter de bloquer l'interface
         }
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
-        // Autoriser la soumission si du contenu multimédia est présent
-        if (mediaPreviews.length === 0 && !content.trim()) return;
-
-        // Vérifier uniquement la longueur du texte s'il est présent
-        if (content.length > maxLength) return;
-
-        // Vérifier que les médias ne sont pas trop volumineux avant l'envoi
-        const MAX_UPLOAD_SIZE = 50 * 1024 * 1024; // 50 Mo maximum par fichier
-        const oversizedFiles = media.filter(file => file.size > MAX_UPLOAD_SIZE);
-        if (oversizedFiles.length > 0) {
-            const fileSizes = oversizedFiles.map(f => `${f.name}: ${Math.round(f.size / (1024 * 1024))}Mo`).join(', ');
-            alert(`Certains fichiers sont trop volumineux pour être envoyés (>${MAX_UPLOAD_SIZE / (1024 * 1024)}Mo): ${fileSizes}. Veuillez d'abord les compresser.`);
+        // Vérifier si le contenu est vide et s'il n'y a pas de média
+        if (!content.trim() && media.length === 0 && existingMediaUrls.length === 0) {
             return;
         }
 
-        // Vérifier que le total des médias n'excède pas une limite raisonnable
-        const TOTAL_MAX_SIZE = 200 * 1024 * 1024; // 200 Mo au total
-        const totalSize = media.reduce((total, file) => total + file.size, 0);
-        if (totalSize > TOTAL_MAX_SIZE) {
-            alert(`Le total de vos médias (${Math.round(totalSize / (1024 * 1024))}Mo) dépasse la limite autorisée (${TOTAL_MAX_SIZE / (1024 * 1024)}Mo). Veuillez supprimer ou compresser certains fichiers.`);
+        // Vérifier la longueur du contenu
+        if (content.length > maxLength) {
             return;
         }
 
         setIsSubmitting(true);
-        const uploadedMediaUrls: string[] = [];
 
         try {
-            // Uploader les médias
-            let uploadedCount = 0;
-            for (const mediaFile of media) {
-                try {
-                    console.log(`Upload du fichier ${mediaFile.name} (${Math.round(mediaFile.size / (1024 * 1024))}Mo)...`);
-                    const response = await uploadImage(mediaFile, 'post');
+            // Télécharger les nouveaux médias
+            const uploadedMediaUrls: string[] = [];
 
-                    if (!response || !response.filename) {
-                        console.error('Réponse d\'upload invalide:', response);
-                        throw new Error('Réponse invalide du serveur lors de l\'upload');
+            // Stocker les URLs des médias existants qui ne sont pas supprimés
+            let retainedExistingMediaUrls: string[] = [];
+
+            if (mode === 'edit' && existingMediaUrls.length > 0) {
+                // Identifier les médias existants conservés
+                retainedExistingMediaUrls = existingMediaUrls.filter(url => !mediaToDelete.includes(url));
+            }
+
+            // Upload des nouveaux médias si présents
+            if (media.length > 0) {
+                // Vérifier la taille totale avant upload
+                const totalSize = media.reduce((acc, file) => acc + file.size, 0);
+                const maxTotalSize = 200 * 1024 * 1024; // 200 MB max total
+
+                if (totalSize > maxTotalSize) {
+                    throw new Error(`La taille totale des médias (${Math.round(totalSize / 1024 / 1024)}Mo) dépasse la limite de 200Mo`);
+                }
+
+                // Uploader chaque média
+                for (const file of media) {
+                    // Vérifier la taille individuelle
+                    if (file.size > 50 * 1024 * 1024) {
+                        throw new Error(`Le fichier ${file.name} (${Math.round(file.size / 1024 / 1024)}Mo) dépasse la limite de 50Mo`);
                     }
 
+                    const response = await uploadImage(file, 'post');
                     uploadedMediaUrls.push(response.filename);
-                    uploadedCount++;
-                    console.log(`Fichier uploadé avec succès (${uploadedCount}/${media.length}): ${response.filename}`);
-                } catch (uploadError) {
-                    console.error(`Erreur lors de l'upload du fichier ${mediaFile.name}:`, uploadError);
+                }
+            }
 
-                    // Si des fichiers ont déjà été uploadés avec succès, on les nettoie
-                    if (uploadedMediaUrls.length > 0) {
-                        console.log(`Nettoyage des ${uploadedMediaUrls.length} fichiers déjà uploadés suite à une erreur...`);
-                        await cleanupUploadedMedia(uploadedMediaUrls);
+            // Combiner les médias existants conservés et les nouveaux médias
+            const allMediaUrls = [...retainedExistingMediaUrls, ...uploadedMediaUrls];
+
+            let updatedTweet;
+
+            if (mode === 'edit' && tweet) {
+                // Mode édition: Mettre à jour le post existant
+                updatedTweet = await updatePost(
+                    tweet.id,
+                    content,
+                    allMediaUrls.length > 0 ? allMediaUrls : undefined
+                );
+
+                // Supprimer les médias qui ne sont plus utilisés
+                if (mediaToDelete.length > 0) {
+                    for (const mediaUrl of mediaToDelete) {
+                        try {
+                            // Extraire le nom du fichier de l'URL
+                            const filename = mediaUrl.includes('/')
+                                ? mediaUrl.split('/').pop() || mediaUrl
+                                : mediaUrl;
+
+                            await deleteMediaFile(filename);
+                        } catch (error) {
+                            // Ne pas bloquer le processus si la suppression échoue
+                        }
                     }
+                }
 
-                    const errorMessage = uploadError instanceof Error ? uploadError.message : 'Erreur inconnue';
-                    throw new Error(`Erreur lors de l'upload du fichier ${mediaFile.name}: ${errorMessage}`);
+                if (onPostUpdated) {
+                    onPostUpdated(updatedTweet);
+                }
+            } else {
+                // Mode création: Créer un nouveau post
+                const newTweet = await createPost(
+                    content,
+                    allMediaUrls.length > 0 ? allMediaUrls : undefined
+                );
+
+                if (onTweetPublished) {
+                    onTweetPublished(newTweet);
                 }
             }
 
-            // Si tous les uploads ont réussi, créer le post
-            console.log(`Création du post avec ${uploadedMediaUrls.length} médias...`);
-            const response = await createPost(content.trim(), uploadedMediaUrls);
-
-            // Vérifier que la réponse est valide
-            if (!response || !response.id) {
-                console.error('Réponse de création invalide:', response);
-
-                // Si l'appel à createPost a échoué, nettoyer les médias uploadés
-                if (uploadedMediaUrls.length > 0) {
-                    console.log(`Nettoyage des ${uploadedMediaUrls.length} fichiers uploadés suite à l'échec de création du post...`);
-                    await cleanupUploadedMedia(uploadedMediaUrls);
-                }
-
-                throw new Error('Réponse invalide du serveur lors de la création du post');
-            }
-
-            console.log('Post créé avec succès');
-            onTweetPublished(response);
-
-            // Nettoyer les ressources et fermer le modal
-            cleanupMediaResources();
-            setContent('');
-            setMedia([]);
-            setMediaPreviews([]);
-            setMediaTypes([]);
-            onClose();
+            // Réinitialiser l'état et fermer la modal
+            handleModalClose();
         } catch (error) {
-            console.error('Erreur lors de la création du post:', error);
-
-            // S'il reste des médias non nettoyés, on les supprime
-            if (uploadedMediaUrls.length > 0) {
-                console.log(`Nettoyage de ${uploadedMediaUrls.length} fichiers médias après erreur...`);
-                await cleanupUploadedMedia(uploadedMediaUrls);
-            }
-
-            const errorMessage = error instanceof Error ? error.message : 'Erreur inconnue';
-            alert(`Erreur lors de la création du post: ${errorMessage}`);
+            // Afficher l'erreur à l'utilisateur
+            alert(error instanceof Error ? error.message : 'Une erreur est survenue lors de la soumission');
         } finally {
             setIsSubmitting(false);
         }
     };
 
-    // Fonction pour nettoyer les médias uploadés en cas d'erreur
-    const cleanupUploadedMedia = async (mediaUrls: string[]): Promise<void> => {
-        try {
-            // Pour chaque média, extraire seulement le nom du fichier (sans le chemin)
-            const cleanMediaUrls = mediaUrls.map(url => {
-                // Si l'URL est déjà un simple nom de fichier
-                if (!url.includes('/')) {
-                    return url;
-                }
-
-                // Si c'est une URL complète, extraire le nom du fichier
-                return url.split('/').pop() || url;
-            });
-
-            console.log("URLs des médias à nettoyer:", cleanMediaUrls);
-
-            const deletionPromises = cleanMediaUrls.map(filename =>
-                deleteMediaFile(filename)
-                    .then(() => console.log(`Fichier ${filename} supprimé avec succès`))
-                    .catch(err => console.error(`Erreur lors de la suppression du fichier ${filename}:`, err))
-            );
-
-            await Promise.all(deletionPromises);
-            console.log('Tous les fichiers uploadés ont été nettoyés après erreur');
-        } catch (e) {
-            console.error('Erreur lors du nettoyage des fichiers uploadés:', e);
-            // Ne pas propager l'erreur pour éviter de bloquer le flux principal
-        }
-    };
-
-    // Fonction pour nettoyer les médias
-    const cleanupMediaResources = () => {
-        try {
-            // Révoquer toutes les URLs blob pour éviter les fuites mémoire
-            mediaPreviews.forEach(preview => {
+    // Fonction personnalisée pour gérer la fermeture du modal sans sauvegarder
+    const handleModalClose = () => {
+        // Révoquer toutes les URLs blob pour éviter les fuites mémoire
+        mediaPreviews.forEach(preview => {
+            if (preview.startsWith('blob:')) {
                 try {
                     URL.revokeObjectURL(preview);
                 } catch (e) {
                     console.error('Erreur lors de la révocation d\'URL:', e);
                 }
-            });
-            console.log(`${mediaPreviews.length} URL(s) blob révoquées lors du nettoyage`);
-        } catch (error) {
-            console.error('Erreur lors du nettoyage des ressources média:', error);
-        }
-    };
+            }
+        });
 
-    // Fonction pour gérer la fermeture et nettoyer les ressources
-    const handleClose = () => {
-        cleanupMediaResources();
-        setContent('');
-        setMedia([]);
-        setMediaPreviews([]);
-        setMediaTypes([]);
+        // Ne pas supprimer les fichiers marqués puisque la modification est annulée
+        setMediaToDelete([]);
+
+        // Fermer le modal
         onClose();
     };
-
-    const handleOverlayClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-        if (e.target === modalRef.current) {
-            onClose();
-        }
-    }, [onClose]);
 
     if (!isOpen) return null;
 
     return (
-        <div
-            ref={modalRef}
-            onClick={handleOverlayClick}
-            className="fixed inset-0 bg-black/30 backdrop-blur-md z-50 flex items-center justify-center p-4"
-        >
-            <div className="bg-white rounded-lg w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
-                <div className="p-4 border-b border-gray-200 flex justify-between items-center">
-                    <h2 className="text-xl font-bold">Créer un tweet</h2>
+        <div className="fixed inset-0 bg-black/70 bg-opacity-50 z-50 flex items-center justify-center">
+            <div className="bg-white w-full max-w-lg rounded-xl shadow-xl p-4 max-h-[90vh] overflow-y-auto">
+                <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-xl font-bold">{getModalTitle()}</h2>
                     <button
-                        onClick={handleClose}
-                        className="text-gray-500 hover:text-gray-700"
+                        onClick={handleModalClose}
+                        className="text-gray-500 hover:text-gray-700 transition-colors"
                     >
-                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                         </svg>
                     </button>
                 </div>
-                <form onSubmit={handleSubmit} className="p-4">
+
+                <form onSubmit={handleSubmit}>
                     <textarea
                         value={content}
                         onChange={(e) => setContent(e.target.value)}
@@ -762,16 +1241,12 @@ export default function PostModal({ isOpen, onClose, onTweetPublished }: PostMod
                             : 'border-gray-300 focus:ring-orange'
                             }`}
                         rows={4}
-                        maxLength={maxLength}
                     />
-                    <div className={`text-left text-sm ${content.length > maxLength ? 'text-red-500' : 'text-gray-500'}`}>
+                    <div className={`text-right text-sm ${content.length > maxLength ? 'text-red-500' : 'text-gray-500'}`}>
                         {content.length}/{maxLength}
                     </div>
-                    {isMediaLoading ? (
-                        <div className="p-4 text-center text-gray-500">
-                            Chargement...
-                        </div>
-                    ) : mediaPreviews.length > 0 && (
+
+                    {mediaPreviews.length > 0 && (
                         <div
                             className="
                                 p-4 
@@ -827,10 +1302,10 @@ export default function PostModal({ isOpen, onClose, onTweetPublished }: PostMod
                                         <button
                                             type="button"
                                             onClick={(e) => {
-                                                e.stopPropagation();
+                                                e.stopPropagation(); // Empêcher la propagation des événements
                                                 handleRemoveMedia(index);
                                             }}
-                                            className="
+                                            className={`
                                                 absolute 
                                                 top-1 
                                                 right-1 
@@ -840,10 +1315,11 @@ export default function PostModal({ isOpen, onClose, onTweetPublished }: PostMod
                                                 p-1 
                                                 hover:bg-black/70
                                                 z-10
-                                            "
+                                                ${isVideo ? 'video-delete-btn' : 'image-delete-btn'}
+                                            `}
                                             title="Supprimer"
                                             data-index={index}
-                                            data-type={mediaTypes[index]}
+                                            data-type={isVideo ? 'video' : 'image'}
                                         >
                                             <svg
                                                 xmlns="http://www.w3.org/2000/svg"
@@ -895,11 +1371,51 @@ export default function PostModal({ isOpen, onClose, onTweetPublished }: PostMod
                             {mediaPreviews.length}/{maxMediaCount}
                         </div>
                     )}
-                    <div className="mt-4 flex justify-between items-center">
-                        <div className="flex items-center space-x-4">
+                    {/* Affichage des fichiers en cours de traitement */}
+                    {Object.values(processingFiles).length > 0 && (
+                        <div className="mt-4 p-4 border border-gray-300 rounded-lg bg-gray-50">
+                            <h3 className="text-md font-semibold mb-2">Fichiers en cours de traitement</h3>
+                            <p className="text-sm text-gray-600 mb-3">
+                                Chargement... L'importation des fichiers peut prendre longtemps en fonction de leur taille...
+                            </p>
+                            {Object.values(processingFiles).map(file => (
+                                <div key={file.id} className="flex items-center justify-between mb-2">
+                                    <div className="flex-1">
+                                        <div className="text-sm truncate">{file.name}</div>
+                                        <div className="w-full bg-gray-200 rounded-full h-2.5">
+                                            <div
+                                                className="bg-orange h-2.5 rounded-full"
+                                                style={{ width: `${file.progress}%` }}
+                                            ></div>
+                                        </div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => file.cancel()}
+                                        className="ml-2 text-red-600 hover:text-red-800"
+                                        title="Annuler"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                    <div className="flex justify-between mt-4">
+                        <div className="flex space-x-2">
+                            <input
+                                type="file"
+                                ref={fileInputRef}
+                                onChange={handleMediaChange}
+                                accept="image/*,video/*"
+                                className="hidden"
+                                multiple
+                            />
                             <button
                                 type="button"
-                                onClick={openMediaImport}
+                                onClick={() => fileInputRef.current?.click()}
                                 className="
                                     text-orange 
                                     hover:text-dark-orange 
@@ -911,7 +1427,7 @@ export default function PostModal({ isOpen, onClose, onTweetPublished }: PostMod
                                     hover:border-dark-orange 
                                     transition-colors
                                 "
-                                disabled={media.length >= maxMediaCount}
+                                disabled={mediaPreviews.length >= maxMediaCount}
                             >
                                 <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -920,152 +1436,20 @@ export default function PostModal({ isOpen, onClose, onTweetPublished }: PostMod
                         </div>
                         <button
                             type="submit"
-                            disabled={media.length === 0 && !content.trim() || content.length > maxLength || isSubmitting}
-                            className="bg-orange text-white px-6 py-2 rounded-full font-semibold hover:bg-dark-orange disabled:opacity-50 disabled:cursor-not-allowed"
+                            disabled={
+                                isSubmitting ||
+                                (content.length === 0 && media.length === 0 && existingMediaUrls.length === 0) ||
+                                content.length > maxLength
+                            }
+                            className="bg-orange hover:bg-orange/80 text-white font-bold py-2 px-4 rounded-full disabled:bg-orange/50 disabled:cursor-not-allowed"
                         >
-                            {isSubmitting ? 'Publication...' : 'Publier'}
+                            {isSubmitting
+                                ? mode === 'edit' ? 'Mise à jour...' : 'Publication...'
+                                : mode === 'edit' ? 'Modifier' : 'Publier'}
                         </button>
                     </div>
                 </form>
             </div>
-
-            {/* Overlay d'importation de média */}
-            {mediaImportOpen && (
-                <div
-                    className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center backdrop-blur-sm"
-                    onClick={() => {
-                        setMediaImportOpen(false);
-                        setSelectedFile(null);
-                        setSelectedFilePreview(null);
-                    }}
-                >
-                    <div
-                        className="bg-white p-6 rounded-lg w-full max-w-md"
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        <h3 className="text-xl font-bold mb-4">
-                            Importer un média
-                        </h3>
-
-                        <input
-                            type="file"
-                            ref={fileInputRef}
-                            onChange={handleFileChange}
-                            accept="image/*,video/*"
-                            className="hidden"
-                        />
-
-                        {isMediaLoading ? (
-                            <div className="text-center py-10">
-                                <p className="text-gray-600 mb-2">Traitement du média en cours...</p>
-                                <div className="w-8 h-8 border-4 border-orange border-t-transparent rounded-full animate-spin mx-auto"></div>
-                            </div>
-                        ) : !selectedFilePreview ? (
-                            <div className="flex flex-col">
-                                <div
-                                    className="border-2 border-dashed border-gray-300 rounded-lg p-6 flex flex-col items-center justify-center mb-4 cursor-pointer hover:border-orange"
-                                    onClick={() => fileInputRef.current?.click()}
-                                >
-                                    <svg
-                                        xmlns="http://www.w3.org/2000/svg"
-                                        fill="none"
-                                        viewBox="0 0 24 24"
-                                        strokeWidth={1.5}
-                                        stroke="currentColor"
-                                        className="w-12 h-12 text-gray-400 mb-4"
-                                    >
-                                        <path
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                            d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6.75a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6.75v10.5a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z"
-                                        />
-                                    </svg>
-                                    <button
-                                        type="button"
-                                        className="bg-orange text-white px-4 py-2 rounded-full hover:bg-dark-orange flex items-center gap-2"
-                                    >
-                                        <svg
-                                            xmlns="http://www.w3.org/2000/svg"
-                                            fill="none"
-                                            viewBox="0 0 24 24"
-                                            strokeWidth={1.5}
-                                            stroke="currentColor"
-                                            className="w-6 h-6"
-                                        >
-                                            <path
-                                                strokeLinecap="round"
-                                                strokeLinejoin="round"
-                                                d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"
-                                            />
-                                        </svg>
-                                        Choisir le fichier
-                                    </button>
-                                    <p className="text-sm text-gray-500 mt-2 text-center">
-                                        Formats acceptés : PNG, JPG, WEBP, MP4, WEBM (compressé automatiquement)
-                                    </p>
-                                </div>
-                                <div className="flex space-x-4 w-full">
-                                    <button
-                                        type="button"
-                                        className="flex-1 py-2 px-4 border border-gray-300 rounded-lg hover:bg-gray-50"
-                                        onClick={() => setMediaImportOpen(false)}
-                                    >
-                                        Fermer
-                                    </button>
-                                    <button
-                                        type="button"
-                                        className="flex-1 py-2 px-4 bg-orange text-white rounded-lg hover:bg-dark-orange opacity-50 cursor-not-allowed"
-                                        disabled
-                                    >
-                                        Importer
-                                    </button>
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="flex flex-col items-center">
-                                <div className="w-full max-h-64 mb-4 overflow-hidden rounded-lg bg-gray-100">
-                                    {selectedFile?.type.startsWith('video/') ? (
-                                        <video
-                                            src={selectedFilePreview}
-                                            className="w-full h-full object-contain"
-                                            controls
-                                        />
-                                    ) : (
-                                        <img
-                                            src={selectedFilePreview}
-                                            alt="Aperçu"
-                                            className="w-full h-full object-contain"
-                                        />
-                                    )}
-                                </div>
-                                <div className="flex space-x-4 w-full">
-                                    <button
-                                        type="button"
-                                        className="flex-1 py-2 px-4 border border-gray-300 rounded-lg hover:bg-gray-50"
-                                        onClick={() => {
-                                            if (selectedFilePreview?.startsWith('blob:')) {
-                                                URL.revokeObjectURL(selectedFilePreview);
-                                            }
-                                            setSelectedFile(null);
-                                            setSelectedFilePreview(null);
-                                            setMediaImportOpen(false);
-                                        }}
-                                    >
-                                        Annuler
-                                    </button>
-                                    <button
-                                        type="button"
-                                        className="flex-1 py-2 px-4 bg-orange text-white rounded-lg hover:bg-dark-orange"
-                                        onClick={handleImportConfirm}
-                                    >
-                                        Importer
-                                    </button>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            )}
         </div>
     );
 } 
