@@ -49,6 +49,7 @@ export interface Tweet {
     created_at: string;
     likes: number;
     isLiked: boolean;
+    isCensored?: boolean;
     user: {
         id: number;
         email: string;
@@ -910,4 +911,63 @@ export async function fetchBlockedUsers(): Promise<{ blockedUsers: User[] }> {
     }
 
     return response.json();
+}
+
+export async function togglePostCensorship(postId: number): Promise<{ isCensored: boolean }> {
+    try {
+        const token = localStorage.getItem('token');
+        if (!token) {
+            throw new Error('Non authentifié');
+        }
+
+        const response = await fetch(`${API_BASE_URL}/posts/${postId}/toggle-censorship`, {
+            method: 'PUT',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+            },
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || 'Erreur lors de la modification du statut de censure');
+        }
+
+        const data = await response.json();
+        return {
+            isCensored: data.isCensored
+        };
+    } catch (error) {
+        console.error('Erreur toggle censure:', error);
+        throw error;
+    }
+}
+
+export async function fetchAllPosts(page: number = 1): Promise<{ posts: Tweet[] }> {
+    try {
+        const token = localStorage.getItem('token');
+        if (!token) {
+            throw new Error('Non authentifié');
+        }
+
+        const response = await fetch(`${API_BASE_URL}/posts?page=${page}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+            }
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || 'Erreur lors de la récupération des posts');
+        }
+
+        const data = await response.json();
+        return {
+            posts: data.posts
+        };
+    } catch (error) {
+        console.error('Erreur fetchAllPosts:', error);
+        throw error;
+    }
 }

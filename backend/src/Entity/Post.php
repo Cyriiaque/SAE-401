@@ -26,6 +26,9 @@ class Post
     #[ORM\ManyToOne(targetEntity: User::class)]
     private ?user $user = null;
 
+    #[ORM\Column(type: 'boolean', options: ['default' => false])]
+    private ?bool $isCensored = false;
+
     public function getId(): ?int
     {
         return $this->id;
@@ -82,6 +85,17 @@ class Post
     public function setMediaUrl(?string $mediaUrl): static
     {
         $this->mediaUrl = $mediaUrl;
+        return $this;
+    }
+
+    public function isCensored(): ?bool
+    {
+        return $this->isCensored;
+    }
+
+    public function setIsCensored(bool $isCensored): static
+    {
+        $this->isCensored = $isCensored;
         return $this;
     }
 }

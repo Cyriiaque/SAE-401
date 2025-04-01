@@ -59,11 +59,12 @@ class PostController extends AbstractController
 
                 $posts[] = [
                     'id' => $post->getId(),
-                    'content' => $post->getContent(),
+                    'content' => $post->isCensored() ? 'Ce message enfreint les conditions d\'utilisation de la plateforme' : $post->getContent(),
                     'mediaUrl' => $post->getMediaUrl(),
                     'created_at' => $post->getCreatedAt()->format('Y-m-d H:i:s'),
-                    'likes' => $totalLikes,
+                    'likes' => $post->isCensored() ? 0 : $totalLikes,
                     'isLiked' => $interaction ? $interaction->isLiked() : false,
+                    'isCensored' => $post->isCensored(),
                     'user' => $userPost ? [
                         'id' => $userPost->getId(),
                         'email' => $userPost->getEmail(),
@@ -150,11 +151,12 @@ class PostController extends AbstractController
 
             $posts[] = [
                 'id' => $post->getId(),
-                'content' => $post->getContent(),
+                'content' => $post->isCensored() ? 'Ce message enfreint les conditions d\'utilisation de la plateforme' : $post->getContent(),
                 'mediaUrl' => $post->getMediaUrl(),
                 'created_at' => $post->getCreatedAt()->format('Y-m-d H:i:s'),
-                'likes' => $totalLikes,
+                'likes' => $post->isCensored() ? 0 : $totalLikes,
                 'isLiked' => $interaction ? $interaction->isLiked() : false,
+                'isCensored' => $post->isCensored(),
                 'user' => $userPost ? [
                     'id' => $userPost->getId(),
                     'email' => $userPost->getEmail(),
@@ -243,11 +245,12 @@ class PostController extends AbstractController
 
                 $posts[] = [
                     'id' => $post->getId(),
-                    'content' => $post->getContent(),
+                    'content' => $post->isCensored() ? 'Ce message enfreint les conditions d\'utilisation de la plateforme' : $post->getContent(),
                     'mediaUrl' => $post->getMediaUrl(),
                     'created_at' => $post->getCreatedAt()->format('Y-m-d H:i:s'),
-                    'likes' => $totalLikes,
+                    'likes' => $post->isCensored() ? 0 : $totalLikes,
                     'isLiked' => $interaction ? $interaction->isLiked() : false,
+                    'isCensored' => $post->isCensored(),
                     'user' => $userPost ? [
                         'id' => $userPost->getId(),
                         'email' => $userPost->getEmail(),
@@ -294,11 +297,12 @@ class PostController extends AbstractController
 
         $postData = [
             'id' => $post->getId(),
-            'content' => $post->getContent(),
+            'content' => $post->isCensored() ? 'Ce message enfreint les conditions d\'utilisation de la plateforme' : $post->getContent(),
             'mediaUrl' => $post->getMediaUrl(),
             'created_at' => $post->getCreatedAt()->format('Y-m-d H:i:s'),
-            'likes' => $totalLikes,
+            'likes' => $post->isCensored() ? 0 : $totalLikes,
             'isLiked' => $interaction ? $interaction->isLiked() : false,
+            'isCensored' => $post->isCensored(),
             'user' => $userPost ? [
                 'id' => $userPost->getId(),
                 'email' => $userPost->getEmail(),
@@ -406,6 +410,30 @@ class PostController extends AbstractController
                 'mention' => $user->getMention(),
                 'avatar' => $user->getAvatar()
             ]
+        ]);
+    }
+
+    #[Route('/posts/{id}/toggle-censorship', name: 'posts.toggle_censorship', methods: ['PUT'])]
+    #[IsGranted('ROLE_ADMIN')]
+    public function toggleCensorship(
+        int $id,
+        PostRepository $postRepository,
+        EntityManagerInterface $entityManager
+    ): JsonResponse {
+        $post = $postRepository->find($id);
+
+        if (!$post) {
+            return $this->json(['message' => 'Post non trouvé'], Response::HTTP_NOT_FOUND);
+        }
+
+        // Inverser le statut de censure
+        $post->setIsCensored(!$post->isCensored());
+        $entityManager->flush();
+
+        return $this->json([
+            'id' => $post->getId(),
+            'isCensored' => $post->isCensored(),
+            'message' => $post->isCensored() ? 'Post censuré avec succès' : 'Censure retirée avec succès'
         ]);
     }
 }

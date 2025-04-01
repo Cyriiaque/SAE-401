@@ -103,6 +103,9 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
   // Nouvelle logique pour gérer les utilisateurs bannis
   const isBanned = tweet.user?.isbanned ?? false;
 
+  // Nouvelle logique pour gérer les posts censurés
+  const isCensored = currentTweet.isCensored ?? false;
+
   const mediaFiles = currentTweet.mediaUrl ? currentTweet.mediaUrl.split(',') : [];
   const displayedMediaFiles = mediaFiles.slice(0, 4);
   const hasMoreMedia = mediaFiles.length > 4;
@@ -461,6 +464,65 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
   const handleShowMoreReplies = () => {
     setDisplayedRepliesCount(prev => prev + 5);
   };
+
+  // Si le post est censuré, afficher un message alternatif
+  if (isCensored) {
+    return (
+      <div className="border-b border-gray-300">
+        <div className="p-4 hover:bg-gray-50">
+          <div className="flex space-x-3 min-h-[48px]">
+            <div className="relative flex-shrink-0">
+              <img
+                src={currentTweet.user?.avatar ? getImageUrl(currentTweet.user.avatar) : '/default_pp.webp'}
+                alt={currentTweet.user?.name || 'Avatar par défaut'}
+                className="w-10 h-10 rounded-full object-cover cursor-pointer"
+                onClick={() => currentTweet.user?.id && onUserProfileClick?.(currentTweet.user.id)}
+              />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-2">
+                <span className="font-bold truncate">{currentTweet.user?.name}</span>
+                <div className="flex items-center space-x-2 text-sm sm:text-base">
+                  <span className="text-gray-500 truncate">@{currentTweet.user?.mention}</span>
+                  <span className="hidden sm:inline text-gray-500">·</span>
+                  <span className="text-gray-500">
+                    {formatDate(currentTweet.created_at)}
+                  </span>
+                </div>
+              </div>
+              <div className="mt-2 text-gray-800 italic bg-red-50 p-3 rounded-lg border border-red-200">
+                Ce message enfreint les conditions d'utilisation de la plateforme
+              </div>
+              {user?.roles?.includes('ROLE_ADMIN') && onDelete && (
+                <div className="flex items-center space-x-4 mt-3">
+                  {onDelete && (
+                    <button
+                      onClick={() => onDelete(currentTweet.id)}
+                      className="flex items-center space-x-2 cursor-pointer group text-gray-500 hover:text-red-500"
+                      title="Supprimer le post"
+                    >
+                      <svg
+                        className="h-5 w-5 fill-none group-hover:stroke-red-500"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                        />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Si l'utilisateur est banni, on limite l'affichage
   if (isBanned) {

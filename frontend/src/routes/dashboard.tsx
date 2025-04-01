@@ -1,37 +1,67 @@
 import { useEffect, useState } from 'react';
-import { User, fetchUsers, updateUser, banUser, getImageUrl } from '../lib/loaders';
+import { User, fetchUsers, updateUser, banUser, getImageUrl, fetchAllPosts, Tweet, togglePostCensorship } from '../lib/loaders';
 import { useNavigate } from 'react-router-dom';
 import Button from '../ui/buttons';
 import { useAuth } from '../contexts/AuthContext';
 import Sidebar from '../components/Sidebar';
 import EditUserModal from '../components/EditUserModal';
 import ConfirmModal from '../components/ConfirmModal';
+import TweetCard from '../components/TweetCard';
 
 export default function Dashboard() {
+    const [activeTab, setActiveTab] = useState<'users' | 'content'>('users');
     const [users, setUsers] = useState<User[]>([]);
+    const [posts, setPosts] = useState<Tweet[]>([]);
     const [loading, setLoading] = useState(true);
+    const [loadingPosts, setLoadingPosts] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [editingUser, setEditingUser] = useState<User | null>(null);
     const { user } = useAuth();
     const navigate = useNavigate();
     const [confirmBanModalOpen, setConfirmBanModalOpen] = useState(false);
     const [userToBan, setUserToBan] = useState<User | null>(null);
+    const [confirmCensorshipModalOpen, setConfirmCensorshipModalOpen] = useState(false);
+    const [postToCensor, setPostToCensor] = useState<Tweet | null>(null);
+    const [page, setPage] = useState(1);
 
     useEffect(() => {
-        const loadUsers = async () => {
-            try {
-                const data = await fetchUsers();
-                setUsers(data);
-            } catch (err) {
-                setError('Erreur lors du chargement des utilisateurs');
-                console.error(err);
-            } finally {
-                setLoading(false);
-            }
-        };
+        if (activeTab === 'users') {
+            loadUsers();
+        } else if (activeTab === 'content') {
+            loadPosts();
+        }
+    }, [activeTab]);
 
-        loadUsers();
-    }, []);
+    const loadUsers = async () => {
+        setLoading(true);
+        try {
+            const data = await fetchUsers();
+            setUsers(data);
+        } catch (err) {
+            setError('Erreur lors du chargement des utilisateurs');
+            console.error(err);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const loadPosts = async () => {
+        setLoadingPosts(true);
+        setError(null);
+        try {
+            const data = await fetchAllPosts(page);
+            setPosts(data.posts);
+        } catch (err) {
+            console.error('Erreur détaillée:', err);
+            if (err instanceof Error) {
+                setError(`Erreur lors du chargement des posts: ${err.message}`);
+            } else {
+                setError('Erreur inconnue lors du chargement des posts');
+            }
+        } finally {
+            setLoadingPosts(false);
+        }
+    };
 
     if (!user?.roles?.includes('ROLE_ADMIN')) {
         navigate('/');
@@ -72,6 +102,25 @@ export default function Dashboard() {
         }
     };
 
+    const handleToggleCensorship = async (post: Tweet) => {
+        setPostToCensor(post);
+        setConfirmCensorshipModalOpen(true);
+    };
+
+    const handleCensorPost = async (post: Tweet) => {
+        try {
+            const result = await togglePostCensorship(post.id);
+            // Mettre à jour la liste des posts après la censure
+            const updatedPosts = posts.map(p =>
+                p.id === post.id ? { ...p, isCensored: result.isCensored } : p
+            );
+            setPosts(updatedPosts);
+            setConfirmCensorshipModalOpen(false);
+        } catch (error) {
+            console.error('Erreur lors de la censure:', error);
+        }
+    };
+
     return (
         <div className="flex min-h-screen bg-white">
             <Sidebar />
@@ -91,101 +140,57 @@ export default function Dashboard() {
                         </div>
                     </div>
 
-                    {loading ? (
-                        <div className="flex justify-center items-center h-64">
-                            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange"></div>
-                        </div>
-                    ) : error ? (
-                        <div className="text-center text-red-500 p-4">{error}</div>
-                    ) : (
-                        <div className="mt-8">
-                            {/* Version mobile et tablette */}
-                            <div className="lg:hidden flex flex-col items-center space-y-6">
-                                {users.map((user) => (
-                                    <div key={user.id} className={`bg-white rounded-lg shadow p-6 border ${user.isbanned ? 'border-red-500' : 'border-orange'} w-full max-w-md`}>
-                                        <div className="flex items-center space-x-4">
-                                            <img
-                                                src={user.avatar ? getImageUrl(user.avatar) : '/default_pp.webp'}
-                                                alt={user.name || 'Avatar par défaut'}
-                                                className="w-10 h-10 rounded-full object-cover"
-                                            />
-                                            <div className="flex-1">
-                                                <h2 className="text-lg font-semibold">{user.name}</h2>
-                                                <p className="text-gray-500">@{user.mention}</p>
-                                                <p className="text-sm text-gray-500">{user.email}</p>
-                                                {user.isbanned && (
-                                                    <span className="text-red-500 text-sm font-bold">Banni</span>
-                                                )}
-                                            </div>
-                                        </div>
-                                        <div className="mt-4 flex justify-start space-x-2">
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
-                                                onClick={() => handleEdit(user)}
-                                            >
-                                                Modifier
-                                            </Button>
-                                            {!(user.roles ?? []).includes('ROLE_ADMIN') && (
-                                                <button
-                                                    onClick={() => handleBan(user)}
-                                                    className="text-red-500 hover:text-red-700 cursor-pointer"
-                                                    title={user.isbanned ? 'Dé-bannir' : 'Bannir'}
-                                                >
-                                                    {user.isbanned ? (
-                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                            <circle cx="12" cy="12" r="10" fill="red" fillOpacity="0.2" />
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" stroke="red" />
-                                                        </svg>
-                                                    ) : (
-                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                            <circle cx="12" cy="12" r="10" fill="green" fillOpacity="0.2" />
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" stroke="green" />
-                                                        </svg>
-                                                    )}
-                                                </button>
-                                            )}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
+                    {/* Onglets */}
+                    <div className="flex border-b border-gray-200">
+                        <button
+                            className={`py-4 px-6 font-medium text-center ${activeTab === 'users'
+                                ? 'text-orange border-b-2 border-orange'
+                                : 'text-gray-500 hover:text-gray-700'}`}
+                            onClick={() => setActiveTab('users')}
+                        >
+                            Gestion des Utilisateurs
+                        </button>
+                        <button
+                            className={`py-4 px-6 font-medium text-center ${activeTab === 'content'
+                                ? 'text-orange border-b-2 border-orange'
+                                : 'text-gray-500 hover:text-gray-700'}`}
+                            onClick={() => setActiveTab('content')}
+                        >
+                            Gestion des Contenus
+                        </button>
+                    </div>
 
-                            {/* Version desktop */}
-                            <div className="hidden lg:block bg-white rounded-lg shadow-lg overflow-hidden border border-orange">
-                                <table className="min-w-full">
-                                    <thead className="bg-gray-100 border-b border-orange">
-                                        <tr>
-                                            <th className="px-8 py-4 text-left text-sm font-semibold text-gray-700">ID</th>
-                                            <th className="px-8 py-4 text-left text-sm font-semibold text-gray-700">Email</th>
-                                            <th className="px-8 py-4 text-left text-sm font-semibold text-gray-700">Nom</th>
-                                            <th className="px-8 py-4 text-left text-sm font-semibold text-gray-700">Mention</th>
-                                            <th className="px-8 py-4 text-left text-sm font-semibold text-gray-700">Avatar</th>
-                                            <th className="px-8 py-4 text-left text-sm font-semibold text-gray-700">Statut</th>
-                                            <th className="px-8 py-4 text-left text-sm font-semibold text-gray-700">Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-gray-200">
+                    {/* Contenu de l'onglet */}
+                    {activeTab === 'users' ? (
+                        <>
+                            {loading ? (
+                                <div className="flex justify-center items-center h-64">
+                                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange"></div>
+                                </div>
+                            ) : error ? (
+                                <div className="text-center text-red-500 p-4">{error}</div>
+                            ) : (
+                                <div className="mt-8">
+                                    {/* Version mobile et tablette */}
+                                    <div className="lg:hidden flex flex-col items-center space-y-6">
                                         {users.map((user) => (
-                                            <tr key={user.id} className={`hover:bg-gray-50 ${user.isbanned ? 'bg-red-50' : ''}`}>
-                                                <td className="px-8 py-4 text-sm text-gray-900">{user.id}</td>
-                                                <td className="px-8 py-4 text-sm text-gray-900">{user.email}</td>
-                                                <td className="px-8 py-4 text-sm text-gray-900">{user.name}</td>
-                                                <td className="px-8 py-4 text-sm text-gray-900">@{user.mention}</td>
-                                                <td className="px-8 py-4">
+                                            <div key={user.id} className={`bg-white rounded-lg shadow p-6 border ${user.isbanned ? 'border-red-500' : 'border-orange'} w-full max-w-md`}>
+                                                <div className="flex items-center space-x-4">
                                                     <img
                                                         src={user.avatar ? getImageUrl(user.avatar) : '/default_pp.webp'}
                                                         alt={user.name || 'Avatar par défaut'}
-                                                        className="h-10 w-10 rounded-full object-cover"
+                                                        className="w-10 h-10 rounded-full object-cover"
                                                     />
-                                                </td>
-                                                <td className="px-8 py-4">
-                                                    {user.isbanned ? (
-                                                        <span className="text-red-500 font-bold">Banni</span>
-                                                    ) : (
-                                                        <span className="text-green-500">Actif</span>
-                                                    )}
-                                                </td>
-                                                <td className="px-8 py-4 flex space-x-2">
+                                                    <div className="flex-1">
+                                                        <h2 className="text-lg font-semibold">{user.name}</h2>
+                                                        <p className="text-gray-500">@{user.mention}</p>
+                                                        <p className="text-sm text-gray-500">{user.email}</p>
+                                                        {user.isbanned && (
+                                                            <span className="text-red-500 text-sm font-bold">Banni</span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <div className="mt-4 flex justify-start space-x-2">
                                                     <Button
                                                         variant="outline"
                                                         size="sm"
@@ -212,13 +217,171 @@ export default function Dashboard() {
                                                             )}
                                                         </button>
                                                     )}
-                                                </td>
-                                            </tr>
+                                                </div>
+                                            </div>
                                         ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
+                                    </div>
+
+                                    {/* Version desktop */}
+                                    <div className="hidden lg:block bg-white rounded-lg shadow-lg overflow-hidden border border-orange">
+                                        <table className="min-w-full">
+                                            <thead className="bg-gray-100 border-b border-orange">
+                                                <tr>
+                                                    <th className="px-8 py-4 text-left text-sm font-semibold text-gray-700">ID</th>
+                                                    <th className="px-8 py-4 text-left text-sm font-semibold text-gray-700">Email</th>
+                                                    <th className="px-8 py-4 text-left text-sm font-semibold text-gray-700">Nom</th>
+                                                    <th className="px-8 py-4 text-left text-sm font-semibold text-gray-700">Mention</th>
+                                                    <th className="px-8 py-4 text-left text-sm font-semibold text-gray-700">Avatar</th>
+                                                    <th className="px-8 py-4 text-left text-sm font-semibold text-gray-700">Statut</th>
+                                                    <th className="px-8 py-4 text-left text-sm font-semibold text-gray-700">Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-gray-200">
+                                                {users.map((user) => (
+                                                    <tr key={user.id} className={`hover:bg-gray-50 ${user.isbanned ? 'bg-red-50' : ''}`}>
+                                                        <td className="px-8 py-4 text-sm text-gray-900">{user.id}</td>
+                                                        <td className="px-8 py-4 text-sm text-gray-900">{user.email}</td>
+                                                        <td className="px-8 py-4 text-sm text-gray-900">{user.name}</td>
+                                                        <td className="px-8 py-4 text-sm text-gray-900">@{user.mention}</td>
+                                                        <td className="px-8 py-4">
+                                                            <img
+                                                                src={user.avatar ? getImageUrl(user.avatar) : '/default_pp.webp'}
+                                                                alt={user.name || 'Avatar par défaut'}
+                                                                className="h-10 w-10 rounded-full object-cover"
+                                                            />
+                                                        </td>
+                                                        <td className="px-8 py-4">
+                                                            {user.isbanned ? (
+                                                                <span className="text-red-500 font-bold">Banni</span>
+                                                            ) : (
+                                                                <span className="text-green-500">Actif</span>
+                                                            )}
+                                                        </td>
+                                                        <td className="px-8 py-4 flex space-x-2">
+                                                            <Button
+                                                                variant="outline"
+                                                                size="sm"
+                                                                onClick={() => handleEdit(user)}
+                                                            >
+                                                                Modifier
+                                                            </Button>
+                                                            {!(user.roles ?? []).includes('ROLE_ADMIN') && (
+                                                                <button
+                                                                    onClick={() => handleBan(user)}
+                                                                    className="text-red-500 hover:text-red-700 cursor-pointer"
+                                                                    title={user.isbanned ? 'Dé-bannir' : 'Bannir'}
+                                                                >
+                                                                    {user.isbanned ? (
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                            <circle cx="12" cy="12" r="10" fill="red" fillOpacity="0.2" />
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" stroke="red" />
+                                                                        </svg>
+                                                                    ) : (
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                            <circle cx="12" cy="12" r="10" fill="green" fillOpacity="0.2" />
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" stroke="green" />
+                                                                        </svg>
+                                                                    )}
+                                                                </button>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
+                        </>
+                    ) : (
+                        // Onglet "Gestion des Contenus"
+                        <>
+                            {loadingPosts ? (
+                                <div className="flex justify-center items-center h-64">
+                                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange"></div>
+                                </div>
+                            ) : error ? (
+                                <div className="text-center text-red-500 p-4">{error}</div>
+                            ) : (
+                                <div className="mt-8">
+                                    <div className="bg-white rounded-lg overflow-hidden">
+                                        <h3 className="text-lg font-semibold mb-4 pl-4">Liste des posts</h3>
+
+                                        {posts.length === 0 ? (
+                                            <div className="text-center text-gray-500 py-8">
+                                                Aucun post disponible
+                                            </div>
+                                        ) : (
+                                            <div className="divide-y divide-gray-200">
+                                                {posts.map((post) => (
+                                                    <div key={post.id} className="relative mb-6">
+                                                        {/* Bouton de censure - version desktop */}
+                                                        <div className="absolute right-4 top-4 z-10 hidden sm:block">
+                                                            <Button
+                                                                variant={post.isCensored ? "outline" : "danger"}
+                                                                size="sm"
+                                                                onClick={() => handleToggleCensorship(post)}
+                                                                className="flex items-center space-x-2"
+                                                            >
+                                                                {post.isCensored ? (
+                                                                    <>
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                                                        </svg>
+                                                                        <span>Annuler la censure</span>
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                                                                        </svg>
+                                                                        <span>Censurer</span>
+                                                                    </>
+                                                                )}
+                                                            </Button>
+                                                        </div>
+
+                                                        {/* Bouton de censure - version mobile */}
+                                                        <div className="sm:hidden">
+                                                            <Button
+                                                                variant={post.isCensored ? "outline" : "danger"}
+                                                                size="sm"
+                                                                onClick={() => handleToggleCensorship(post)}
+                                                                className="flex items-center justify-center w-full space-x-2"
+                                                            >
+                                                                {post.isCensored ? (
+                                                                    <>
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                                                        </svg>
+                                                                        <span>Annuler la censure</span>
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                                                                        </svg>
+                                                                        <span>Censurer</span>
+                                                                    </>
+                                                                )}
+                                                            </Button>
+                                                        </div>
+
+                                                        <TweetCard
+                                                            tweet={post}
+                                                            onDelete={() => { }}
+                                                            onPostUpdated={() => { }}
+                                                        />
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                        </>
                     )}
                 </div>
             </div>
@@ -235,11 +398,24 @@ export default function Dashboard() {
             <ConfirmModal
                 isOpen={confirmBanModalOpen}
                 onClose={() => setConfirmBanModalOpen(false)}
-                onConfirm={() => handleBanUser(userToBan!)}
+                onConfirm={() => {
+                    handleBanUser(userToBan!);
+                    setConfirmBanModalOpen(false);
+                }}
                 title={`${userToBan?.isbanned ? 'Débannir' : 'Bannir'} l'utilisateur`}
                 message={`Êtes-vous sûr de vouloir ${userToBan?.isbanned ? 'débannir' : 'bannir'} cet utilisateur ?`}
                 confirmText={userToBan?.isbanned ? 'Débannir' : 'Bannir'}
-                variant="full"
+                variant="danger"
+            />
+
+            <ConfirmModal
+                isOpen={confirmCensorshipModalOpen}
+                onClose={() => setConfirmCensorshipModalOpen(false)}
+                onConfirm={() => handleCensorPost(postToCensor!)}
+                title={`${postToCensor?.isCensored ? 'Annuler la censure' : 'Censurer'} le post`}
+                message={`Êtes-vous sûr de vouloir ${postToCensor?.isCensored ? 'annuler la censure de' : 'censurer'} ce post ?`}
+                confirmText={postToCensor?.isCensored ? 'Annuler la censure' : 'Censurer'}
+                variant="danger"
             />
         </div>
     );
