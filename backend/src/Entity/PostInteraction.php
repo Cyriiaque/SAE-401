@@ -4,6 +4,7 @@ namespace App\Entity;
 
 use App\Repository\PostInteractionRepository;
 use Doctrine\ORM\Mapping as ORM;
+use Doctrine\DBAL\Types\Types;
 
 #[ORM\Entity(repositoryClass: PostInteractionRepository::class)]
 class PostInteraction
@@ -23,6 +24,12 @@ class PostInteraction
     #[ORM\ManyToOne]
     #[ORM\JoinColumn(nullable: false)]
     private ?Post $post = null;
+
+    #[ORM\Column(length: 280, nullable: true)]
+    private ?string $reply = null;
+
+    #[ORM\Column(type: Types::DATETIME_MUTABLE, nullable: true)]
+    private ?\DateTimeInterface $replied_at = null;
 
     public function getId(): ?int
     {
@@ -61,6 +68,30 @@ class PostInteraction
     public function setPost(?Post $post): static
     {
         $this->post = $post;
+
+        return $this;
+    }
+
+    public function getReply(): ?string
+    {
+        return $this->reply;
+    }
+
+    public function setReply(?string $reply): static
+    {
+        $this->reply = $reply;
+
+        return $this;
+    }
+
+    public function getRepliedAt(): ?\DateTimeInterface
+    {
+        return $this->replied_at;
+    }
+
+    public function setRepliedAt(?\DateTimeInterface $replied_at): static
+    {
+        $this->replied_at = $replied_at;
 
         return $this;
     }

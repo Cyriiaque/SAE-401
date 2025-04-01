@@ -1,18 +1,5 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { createPost, Tweet, uploadImage, deleteMediaFile } from '../lib/loaders';
-import { useAuth } from '../contexts/AuthContext';
-
-interface ProcessingFile {
-    id: string;
-    name: string;
-    progress: number;
-    cancel: () => void;
-    error?: string;
-}
-
-interface HTMLVideoElementWithCapture extends HTMLVideoElement {
-    captureStream?: () => MediaStream;
-}
 
 interface PostModalProps {
     isOpen: boolean;
@@ -26,13 +13,29 @@ export default function PostModal({ isOpen, onClose, onTweetPublished }: PostMod
     const [media, setMedia] = useState<File[]>([]);
     const [mediaPreviews, setMediaPreviews] = useState<string[]>([]);
     const [mediaTypes, setMediaTypes] = useState<('image' | 'video')[]>([]);
-    const [isPasswordHelpVisible, setIsPasswordHelpVisible] = useState(false);
+    const [isMediaLoading, setIsMediaLoading] = useState(false);
+    const [mediaImportOpen, setMediaImportOpen] = useState(false);
+    const [selectedFile, setSelectedFile] = useState<File | null>(null);
+    const [selectedFilePreview, setSelectedFilePreview] = useState<string | null>(null);
+
     const maxLength = 280;
     const maxMediaCount = 10;
-    const { user } = useAuth();
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const [isMediaLoading, setIsMediaLoading] = useState(false);
-    const [processingFiles, setProcessingFiles] = useState<Record<string, ProcessingFile>>({});
+    const modalRef = useRef<HTMLDivElement>(null);
+
+    // Effet pour bloquer/débloquer le scroll du body
+    useEffect(() => {
+        if (isOpen || mediaImportOpen) {
+            document.body.style.overflow = 'hidden';
+        } else {
+            document.body.style.overflow = 'unset';
+        }
+
+        // Nettoyer l'effet lors du démontage
+        return () => {
+            document.body.style.overflow = 'unset';
+        };
+    }, [isOpen, mediaImportOpen]);
 
     // Fonction pour compresser une image
     const compressImage = (file: File, maxSizeInMB: number = 1): Promise<File> => {
@@ -383,370 +386,142 @@ export default function PostModal({ isOpen, onClose, onTweetPublished }: PostMod
         });
     };
 
-    const handleMediaChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const files = e.target.files;
-        if (files) {
-            // Convertir FileList en tableau
-            const fileArray = Array.from(files);
+    const openMediaImport = () => {
+        if (media.length >= maxMediaCount) {
+            alert(`Vous ne pouvez pas ajouter plus de ${maxMediaCount} médias.`);
+            return;
+        }
+        setMediaImportOpen(true);
+        setSelectedFile(null);
+        setSelectedFilePreview(null);
+    };
 
-            // Vérifier le nombre total de médias
-            if (media.length + fileArray.length > maxMediaCount) {
-                alert(`Vous ne pouvez pas ajouter plus de ${maxMediaCount} médias.`);
-                return;
-            }
-
-            // Vérifier les tailles des fichiers originaux (limite absolue pour ne pas bloquer le navigateur)
-            const MAX_ORIGINAL_SIZE = 250 * 1024 * 1024; // 250 Mo maximum par fichier d'origine
-            const oversizedFiles = fileArray.filter(file => file.size > MAX_ORIGINAL_SIZE);
-            if (oversizedFiles.length > 0) {
-                const fileSizes = oversizedFiles.map(f => `${f.name}: ${Math.round(f.size / (1024 * 1024))}Mo`).join(', ');
-                alert(`Les fichiers suivants sont trop volumineux (>${MAX_ORIGINAL_SIZE / (1024 * 1024)}Mo): ${fileSizes}.`);
-                return;
-            }
-
-            // Reset l'input file pour permettre la sélection des mêmes fichiers
-            e.target.value = '';
-
-            // Activer le chargement
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
             setIsMediaLoading(true);
 
-            const newMedia: File[] = [];
-            const newPreviews: string[] = [];
-            const newMediaTypes: ('image' | 'video')[] = [];
+            try {
+                const isVideo = file.type.startsWith('video/');
+                let processedFile = file;
 
-            // Traiter chaque fichier séquentiellement pour éviter de surcharger le navigateur
-            for (let i = 0; i < fileArray.length; i++) {
-                const file = fileArray[i];
-                const fileId = `file-${Date.now()}-${i}`;
-
-                console.log(`Traitement du fichier ${i + 1}/${fileArray.length}: ${file.name} (${Math.round(file.size / (1024 * 1024))}Mo)`);
-
-                // Créer un objet d'annulation
-                let cancelProcessing = false;
-                const cancelTokens: number[] = [];
-                let progressInterval = 0; // Initialiser avec 0
-
-                // Ajouter ce fichier à la liste des fichiers en cours de traitement
-                setProcessingFiles(prev => ({
-                    ...prev,
-                    [fileId]: {
-                        id: fileId,
-                        name: file.name,
-                        progress: 0,
-                        cancel: () => {
-                            cancelProcessing = true;
-                            cancelTokens.forEach(id => window.clearTimeout(id));
-                            if (progressInterval) window.clearInterval(progressInterval);
-                            setProcessingFiles(current => {
-                                const updated = { ...current };
-                                delete updated[fileId];
-                                return updated;
-                            });
-                        }
-                    }
-                }));
-
-                try {
-                    let processedFile = file;
-                    const isVideo = file.type.startsWith('video/');
-                    const isImage = file.type.startsWith('image/');
-
-                    // Mise à jour périodique de la progression
-                    progressInterval = window.setInterval(() => {
-                        if (!cancelProcessing) {
-                            setProcessingFiles(prev => {
-                                if (!prev[fileId]) return prev;
-                                return {
-                                    ...prev,
-                                    [fileId]: {
-                                        ...prev[fileId],
-                                        progress: Math.min(prev[fileId].progress + 5, 95) // augmente progressivement mais plafonne à 95%
-                                    }
-                                };
-                            });
-                        }
-                    }, 1000);
-                    cancelTokens.push(progressInterval);
-
-                    // Vérification des limites de taille pour l'upload
-                    const MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50 Mo max après compression
-                    const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5 Mo max après compression
-
-                    // Compresser les vidéos si nécessaire
-                    if (isVideo && file.size > MAX_VIDEO_SIZE) {
-                        console.log(`Compression de la vidéo ${file.name} (${Math.round(file.size / (1024 * 1024))}Mo > ${MAX_VIDEO_SIZE / (1024 * 1024)}Mo)...`);
-
-                        try {
-                            // Vérifier périodiquement si l'opération a été annulée
-                            if (cancelProcessing) {
-                                throw new Error("Traitement annulé par l'utilisateur");
-                            }
-
-                            processedFile = await compressVideo(file);
-
-                            // Vérifier à nouveau si l'opération a été annulée pendant la compression
-                            if (cancelProcessing) {
-                                throw new Error("Traitement annulé par l'utilisateur");
-                            }
-
-                            console.log(`Compression terminée: ${Math.round(file.size / (1024 * 1024))}Mo -> ${Math.round(processedFile.size / (1024 * 1024))}Mo`);
-
-                            // Si toujours trop volumineux, on alerte
-                            if (processedFile.size > MAX_VIDEO_SIZE) {
-                                console.warn(`La vidéo compressée est toujours trop volumineuse: ${Math.round(processedFile.size / (1024 * 1024))}Mo > ${MAX_VIDEO_SIZE / (1024 * 1024)}Mo`);
-                            }
-                        } catch (compressError) {
-                            // Si l'erreur est due à l'annulation, propager l'erreur
-                            if (cancelProcessing || (compressError instanceof Error && compressError.message.includes("annulé"))) {
-                                throw new Error("Traitement annulé par l'utilisateur");
-                            }
-
-                            console.error("Erreur de compression vidéo:", compressError);
-                            throw new Error(`Impossible de compresser la vidéo ${file.name}: ${compressError instanceof Error ? compressError.message : 'Erreur inconnue'}`);
-                        }
-                    }
-
-                    // Compresser les images si nécessaires
-                    if (isImage && file.size > MAX_IMAGE_SIZE) {
-                        console.log(`Compression de l'image ${file.name} (${Math.round(file.size / (1024 * 1024))}Mo > ${MAX_IMAGE_SIZE / (1024 * 1024)}Mo)...`);
-
-                        try {
-                            // Vérifier si l'opération a été annulée
-                            if (cancelProcessing) {
-                                throw new Error("Traitement annulé par l'utilisateur");
-                            }
-
-                            processedFile = await compressImage(file);
-
-                            // Vérifier à nouveau si l'opération a été annulée pendant la compression
-                            if (cancelProcessing) {
-                                throw new Error("Traitement annulé par l'utilisateur");
-                            }
-
-                            console.log(`Compression terminée: ${Math.round(file.size / (1024 * 1024))}Mo -> ${Math.round(processedFile.size / (1024 * 1024))}Mo`);
-                        } catch (compressError) {
-                            // Si l'erreur est due à l'annulation, propager l'erreur
-                            if (cancelProcessing || (compressError instanceof Error && compressError.message.includes("annulé"))) {
-                                throw new Error("Traitement annulé par l'utilisateur");
-                            }
-
-                            console.error("Erreur de compression image:", compressError);
-                            throw new Error(`Impossible de compresser l'image ${file.name}`);
-                        }
-                    }
-
-                    // Créer les URL pour les previews
-                    const objectUrl = URL.createObjectURL(processedFile);
-
-                    // Pour les vidéos, vérifier qu'elles peuvent être lues
-                    if (isVideo) {
-                        console.log(`Vérification de la compatibilité de la vidéo ${file.name}...`);
-
-                        try {
-                            // Vérifier si l'opération a été annulée
-                            if (cancelProcessing) {
-                                URL.revokeObjectURL(objectUrl);
-                                throw new Error("Traitement annulé par l'utilisateur");
-                            }
-
-                            await new Promise<void>((resolve, reject) => {
-                                const videoElement = document.createElement('video');
-                                const loadTimeout = setTimeout(() => {
-                                    console.warn(`Délai dépassé lors du chargement de la vidéo ${file.name}`);
-                                    videoElement.onerror = null;
-                                    videoElement.onloadedmetadata = null;
-                                    reject(new Error("Délai de chargement de la vidéo dépassé"));
-                                }, 20000); // 20 secondes max pour charger
-                                cancelTokens.push(loadTimeout);
-
-                                videoElement.onerror = (event) => {
-                                    clearTimeout(loadTimeout);
-                                    console.error(`Erreur lors du chargement de la vidéo ${file.name}:`, event);
-                                    videoElement.onerror = null;
-                                    videoElement.onloadedmetadata = null;
-                                    reject(new Error(`Format vidéo ${file.type.split('/')[1] || ''} non supporté par le navigateur`));
-                                };
-
-                                videoElement.onloadedmetadata = () => {
-                                    clearTimeout(loadTimeout);
-                                    videoElement.onerror = null;
-                                    videoElement.onloadedmetadata = null;
-
-                                    // Vérifier si l'opération a été annulée pendant le chargement
-                                    if (cancelProcessing) {
-                                        reject(new Error("Traitement annulé par l'utilisateur"));
-                                        return;
-                                    }
-
-                                    // Vérifier des dimensions et durée valides
-                                    if (videoElement.videoWidth === 0 || videoElement.videoHeight === 0) {
-                                        reject(new Error(`La vidéo ${file.name} a des dimensions invalides`));
-                                        return;
-                                    }
-
-                                    if (isNaN(videoElement.duration) || videoElement.duration === Infinity || videoElement.duration === 0) {
-                                        reject(new Error(`La vidéo ${file.name} a une durée invalide`));
-                                        return;
-                                    }
-
-                                    resolve();
-                                };
-
-                                videoElement.src = objectUrl;
-                            });
-
-                            // Si on arrive ici, la vidéo est valide
-                            newMedia.push(processedFile);
-                            newPreviews.push(objectUrl);
-                            newMediaTypes.push('video');
-                            console.log(`Vidéo ${file.name} ajoutée avec succès`);
-                        } catch (error) {
-                            URL.revokeObjectURL(objectUrl);
-
-                            if (cancelProcessing) {
-                                throw new Error("Traitement annulé par l'utilisateur");
-                            }
-
-                            console.error(`Erreur lors de la vérification de la vidéo ${file.name}:`, error);
-
-                            // Essayer de convertir la vidéo si elle ne peut pas être lue
-                            try {
-                                console.log(`Tentative de conversion de la vidéo ${file.name}...`);
-                                processedFile = await tryConvertVideo(file);
-                                const newUrl = URL.createObjectURL(processedFile);
-
-                                // Vérifier que la vidéo convertie est lisible
-                                await new Promise<void>((resolve, reject) => {
-                                    const videoElement = document.createElement('video');
-                                    const loadTimeout = setTimeout(() => {
-                                        reject(new Error("Délai de chargement de la vidéo convertie dépassé"));
-                                    }, 20000);
-
-                                    videoElement.onloadedmetadata = () => {
-                                        clearTimeout(loadTimeout);
-                                        resolve();
-                                    };
-
-                                    videoElement.onerror = () => {
-                                        clearTimeout(loadTimeout);
-                                        reject(new Error("La vidéo convertie n'est pas lisible"));
-                                    };
-
-                                    videoElement.src = newUrl;
-                                });
-
-                                newMedia.push(processedFile);
-                                newPreviews.push(newUrl);
-                                newMediaTypes.push('video');
-                                console.log(`Vidéo ${file.name} convertie et ajoutée avec succès`);
-                            } catch (conversionError) {
-                                console.error(`Échec de la conversion de la vidéo ${file.name}:`, conversionError);
-                                throw new Error(`Impossible de charger la vidéo ${file.name}: format non supporté`);
-                            }
-                        }
-                    } else if (isImage) {
-                        try {
-                            // Vérifier si l'opération a été annulée
-                            if (cancelProcessing) {
-                                URL.revokeObjectURL(objectUrl);
-                                throw new Error("Traitement annulé par l'utilisateur");
-                            }
-
-                            // Valider l'image
-                            await new Promise<void>((resolve, reject) => {
-                                const img = new Image();
-                                const loadTimeout = setTimeout(() => {
-                                    reject(new Error("Délai de chargement de l'image dépassé"));
-                                }, 10000); // 10 secondes max
-
-                                img.onload = () => {
-                                    clearTimeout(loadTimeout);
-                                    // Vérifier si l'image a des dimensions valides
-                                    if (img.width === 0 || img.height === 0) {
-                                        reject(new Error("L'image a des dimensions invalides"));
-                                        return;
-                                    }
-                                    resolve();
-                                };
-
-                                img.onerror = () => {
-                                    clearTimeout(loadTimeout);
-                                    reject(new Error("Format d'image non supporté"));
-                                };
-
-                                img.src = objectUrl;
-                            });
-
-                            newMedia.push(processedFile);
-                            newPreviews.push(objectUrl);
-                            newMediaTypes.push('image');
-                            console.log(`Image ${file.name} ajoutée avec succès`);
-                        } catch (error) {
-                            URL.revokeObjectURL(objectUrl);
-                            console.error(`Erreur lors de la validation de l'image ${file.name}:`, error);
-                            throw new Error(`Impossible de charger l'image ${file.name}: ${error instanceof Error ? error.message : 'format non supporté'}`);
-                        }
-                    } else {
-                        URL.revokeObjectURL(objectUrl);
-                        throw new Error(`Type de fichier non supporté: ${file.type}`);
-                    }
-
-                    // Mettre à jour la progression à 100%
-                    setProcessingFiles(prev => ({
-                        ...prev,
-                        [fileId]: {
-                            ...prev[fileId],
-                            progress: 100
-                        }
-                    }));
-
-                    // Supprimer l'entrée de traitement après un court délai
-                    const removeEntryTimeout = setTimeout(() => {
-                        setProcessingFiles(prev => {
-                            const updated = { ...prev };
-                            delete updated[fileId];
-                            return updated;
-                        });
-                    }, 1000);
-                    cancelTokens.push(removeEntryTimeout);
-
-                } catch (error) {
-                    console.error(`Erreur lors du traitement du fichier ${file.name}:`, error);
-
-                    // Marquer comme erreur sauf si annulé par l'utilisateur
-                    if (!(error instanceof Error && error.message.includes("annulé"))) {
-                        setProcessingFiles(prev => ({
-                            ...prev,
-                            [fileId]: {
-                                ...prev[fileId],
-                                progress: -1, // -1 indique une erreur
-                                error: error instanceof Error ? error.message : "Erreur inconnue"
-                            }
-                        }));
-
-                        // Supprimer l'entrée d'erreur après quelques secondes
-                        const removeErrorTimeout = setTimeout(() => {
-                            setProcessingFiles(prev => {
-                                const updated = { ...prev };
-                                delete updated[fileId];
-                                return updated;
-                            });
-                        }, 5000);
-                        cancelTokens.push(removeErrorTimeout);
-                    }
+                // Compression si nécessaire
+                if (isVideo) {
+                    processedFile = await compressVideo(file, 50);
+                } else if (file.size > 1 * 1024 * 1024) {
+                    processedFile = await compressImage(file, 1);
                 }
-            }
 
-            // Mettre à jour les états avec les nouveaux médias
-            if (newMedia.length > 0) {
-                setMedia(prev => [...prev, ...newMedia]);
-                setMediaPreviews(prev => [...prev, ...newPreviews]);
-                setMediaTypes(prev => [...prev, ...newMediaTypes]);
-            }
+                const mediaUrl = URL.createObjectURL(processedFile);
 
-            // Désactiver le chargement
-            setIsMediaLoading(false);
+                if (isVideo) {
+                    const videoElement = document.createElement('video');
+                    videoElement.crossOrigin = "anonymous";
+
+                    const videoLoadPromise = new Promise<void>((resolve, reject) => {
+                        const timeout = setTimeout(() => {
+                            URL.revokeObjectURL(mediaUrl);
+                            reject(new Error(`Délai d'attente dépassé pour le chargement de la vidéo`));
+                        }, 10000);
+
+                        videoElement.onloadedmetadata = () => {
+                            clearTimeout(timeout);
+                            try {
+                                if (videoElement.duration === Infinity || isNaN(videoElement.duration) || videoElement.duration === 0) {
+                                    URL.revokeObjectURL(mediaUrl);
+                                    reject(new Error(`Format vidéo non supporté ou corrompu (durée non valide)`));
+                                    return;
+                                }
+
+                                if (videoElement.videoWidth === 0 || videoElement.videoHeight === 0) {
+                                    URL.revokeObjectURL(mediaUrl);
+                                    reject(new Error(`Format vidéo non supporté ou corrompu (dimensions non valides)`));
+                                    return;
+                                }
+
+                                setSelectedFile(processedFile);
+                                setSelectedFilePreview(mediaUrl);
+                                resolve();
+                            } catch (e) {
+                                URL.revokeObjectURL(mediaUrl);
+                                reject(e);
+                            }
+                        };
+
+                        videoElement.onerror = () => {
+                            clearTimeout(timeout);
+                            URL.revokeObjectURL(mediaUrl);
+                            reject(new Error('Format vidéo non supporté'));
+                        };
+                    });
+
+                    videoElement.src = mediaUrl;
+                    await videoLoadPromise;
+                } else {
+                    const imgElement = new Image();
+
+                    const imageLoadPromise = new Promise<void>((resolve, reject) => {
+                        const timeout = setTimeout(() => {
+                            URL.revokeObjectURL(mediaUrl);
+                            reject(new Error('Délai d\'attente dépassé pour le chargement de l\'image'));
+                        }, 5000);
+
+                        imgElement.onload = () => {
+                            clearTimeout(timeout);
+                            setSelectedFile(processedFile);
+                            setSelectedFilePreview(mediaUrl);
+                            resolve();
+                        };
+
+                        imgElement.onerror = () => {
+                            clearTimeout(timeout);
+                            URL.revokeObjectURL(mediaUrl);
+                            reject(new Error('Image invalide'));
+                        };
+                    });
+
+                    imgElement.src = mediaUrl;
+                    await imageLoadPromise;
+                }
+            } catch (error) {
+                console.error('Erreur lors du traitement du fichier:', error);
+
+                // Si c'est une erreur vidéo, essayer de convertir
+                if (file.type.startsWith('video/')) {
+                    try {
+                        console.log('Tentative de conversion de la vidéo en format alternatif...');
+                        const convertedFile = await tryConvertVideo(file);
+                        const newMediaUrl = URL.createObjectURL(convertedFile);
+
+                        setSelectedFile(convertedFile);
+                        setSelectedFilePreview(newMediaUrl);
+                        console.log('Conversion vidéo réussie!');
+                    } catch (conversionError) {
+                        console.error('Échec de la conversion vidéo:', conversionError);
+                        alert('Impossible de traiter cette vidéo. Veuillez en choisir une autre.');
+                    }
+                } else {
+                    alert('Impossible de traiter ce fichier. Veuillez en choisir un autre.');
+                }
+            } finally {
+                setIsMediaLoading(false);
+            }
         }
+    };
+
+    const handleImportConfirm = () => {
+        if (!selectedFile || !selectedFilePreview) return;
+
+        const isVideo = selectedFile.type.startsWith('video/');
+
+        setMedia(prev => [...prev, selectedFile]);
+        setMediaPreviews(prev => [...prev, selectedFilePreview]);
+        setMediaTypes(prev => [...prev, isVideo ? 'video' : 'image']);
+
+        // Réinitialiser les états de sélection
+        setSelectedFile(null);
+        setSelectedFilePreview(null);
+        setMediaImportOpen(false);
     };
 
     const handleRemoveMedia = (index: number) => {
@@ -789,16 +564,6 @@ export default function PostModal({ isOpen, onClose, onTweetPublished }: PostMod
             }, 100);
         } catch (error) {
             console.error("Erreur lors de la suppression du média:", error);
-        }
-    };
-
-    const getMediaGridClass = (mediaCount: number) => {
-        switch (mediaCount) {
-            case 1: return 'grid-cols-1 grid-rows-1 max-h-[200px]';
-            case 2: return 'grid-cols-2 grid-rows-1 max-h-[150px]';
-            case 3: return 'grid-cols-3 grid-rows-1 max-h-[150px]';
-            case 4: return 'grid-cols-2 grid-rows-2 max-h-[250px]';
-            default: return '';
         }
     };
 
@@ -961,11 +726,21 @@ export default function PostModal({ isOpen, onClose, onTweetPublished }: PostMod
         onClose();
     };
 
+    const handleOverlayClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+        if (e.target === modalRef.current) {
+            onClose();
+        }
+    }, [onClose]);
+
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 bg-black/30 backdrop-blur-md z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-lg w-full max-w-lg">
+        <div
+            ref={modalRef}
+            onClick={handleOverlayClick}
+            className="fixed inset-0 bg-black/30 backdrop-blur-md z-50 flex items-center justify-center p-4"
+        >
+            <div className="bg-white rounded-lg w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
                 <div className="p-4 border-b border-gray-200 flex justify-between items-center">
                     <h2 className="text-xl font-bold">Créer un tweet</h2>
                     <button
@@ -1051,7 +826,10 @@ export default function PostModal({ isOpen, onClose, onTweetPublished }: PostMod
                                         {/* Bouton de suppression */}
                                         <button
                                             type="button"
-                                            onClick={() => handleRemoveMedia(index)}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleRemoveMedia(index);
+                                            }}
                                             className="
                                                 absolute 
                                                 top-1 
@@ -1061,8 +839,11 @@ export default function PostModal({ isOpen, onClose, onTweetPublished }: PostMod
                                                 rounded-full 
                                                 p-1 
                                                 hover:bg-black/70
+                                                z-10
                                             "
                                             title="Supprimer"
+                                            data-index={index}
+                                            data-type={mediaTypes[index]}
                                         >
                                             <svg
                                                 xmlns="http://www.w3.org/2000/svg"
@@ -1109,43 +890,6 @@ export default function PostModal({ isOpen, onClose, onTweetPublished }: PostMod
                             })}
                         </div>
                     )}
-                    {/* Indicateur de progression pour les fichiers en cours de traitement */}
-                    {Object.keys(processingFiles).length > 0 && (
-                        <div className="mt-2 p-2 space-y-2">
-                            {Object.values(processingFiles).map((file) => (
-                                <div key={file.id} className="flex items-center text-sm">
-                                    <div className="flex-1 mr-2">
-                                        <div className="flex justify-between mb-1">
-                                            <span className="text-gray-700 truncate max-w-[200px]">{file.name}</span>
-                                            {file.progress >= 0 && (
-                                                <span className="text-gray-500">{file.progress}%</span>
-                                            )}
-                                        </div>
-                                        <div className="w-full bg-gray-200 rounded-full h-2">
-                                            <div
-                                                className={`h-2 rounded-full ${file.progress < 0 ? 'bg-red-500' : 'bg-orange'}`}
-                                                style={{ width: `${file.progress < 0 ? 100 : file.progress}%` }}
-                                            ></div>
-                                        </div>
-                                        {file.progress < 0 && (
-                                            <p className="text-red-500 text-xs mt-0.5">
-                                                {file.error || "Erreur lors du traitement"}
-                                            </p>
-                                        )}
-                                    </div>
-                                    <button
-                                        onClick={file.cancel}
-                                        className="text-gray-500 hover:text-gray-700"
-                                        title="Annuler"
-                                    >
-                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                        </svg>
-                                    </button>
-                                </div>
-                            ))}
-                        </div>
-                    )}
                     {mediaPreviews.length > 0 && (
                         <div className="text-left text-sm text-gray-500 mt-2">
                             {mediaPreviews.length}/{maxMediaCount}
@@ -1153,17 +897,9 @@ export default function PostModal({ isOpen, onClose, onTweetPublished }: PostMod
                     )}
                     <div className="mt-4 flex justify-between items-center">
                         <div className="flex items-center space-x-4">
-                            <input
-                                type="file"
-                                ref={fileInputRef}
-                                onChange={handleMediaChange}
-                                accept="image/*,video/*"
-                                multiple
-                                className="hidden"
-                            />
                             <button
                                 type="button"
-                                onClick={() => fileInputRef.current?.click()}
+                                onClick={openMediaImport}
                                 className="
                                     text-orange 
                                     hover:text-dark-orange 
@@ -1192,6 +928,144 @@ export default function PostModal({ isOpen, onClose, onTweetPublished }: PostMod
                     </div>
                 </form>
             </div>
+
+            {/* Overlay d'importation de média */}
+            {mediaImportOpen && (
+                <div
+                    className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center backdrop-blur-sm"
+                    onClick={() => {
+                        setMediaImportOpen(false);
+                        setSelectedFile(null);
+                        setSelectedFilePreview(null);
+                    }}
+                >
+                    <div
+                        className="bg-white p-6 rounded-lg w-full max-w-md"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <h3 className="text-xl font-bold mb-4">
+                            Importer un média
+                        </h3>
+
+                        <input
+                            type="file"
+                            ref={fileInputRef}
+                            onChange={handleFileChange}
+                            accept="image/*,video/*"
+                            className="hidden"
+                        />
+
+                        {isMediaLoading ? (
+                            <div className="text-center py-10">
+                                <p className="text-gray-600 mb-2">Traitement du média en cours...</p>
+                                <div className="w-8 h-8 border-4 border-orange border-t-transparent rounded-full animate-spin mx-auto"></div>
+                            </div>
+                        ) : !selectedFilePreview ? (
+                            <div className="flex flex-col">
+                                <div
+                                    className="border-2 border-dashed border-gray-300 rounded-lg p-6 flex flex-col items-center justify-center mb-4 cursor-pointer hover:border-orange"
+                                    onClick={() => fileInputRef.current?.click()}
+                                >
+                                    <svg
+                                        xmlns="http://www.w3.org/2000/svg"
+                                        fill="none"
+                                        viewBox="0 0 24 24"
+                                        strokeWidth={1.5}
+                                        stroke="currentColor"
+                                        className="w-12 h-12 text-gray-400 mb-4"
+                                    >
+                                        <path
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6.75a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6.75v10.5a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z"
+                                        />
+                                    </svg>
+                                    <button
+                                        type="button"
+                                        className="bg-orange text-white px-4 py-2 rounded-full hover:bg-dark-orange flex items-center gap-2"
+                                    >
+                                        <svg
+                                            xmlns="http://www.w3.org/2000/svg"
+                                            fill="none"
+                                            viewBox="0 0 24 24"
+                                            strokeWidth={1.5}
+                                            stroke="currentColor"
+                                            className="w-6 h-6"
+                                        >
+                                            <path
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                                d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"
+                                            />
+                                        </svg>
+                                        Choisir le fichier
+                                    </button>
+                                    <p className="text-sm text-gray-500 mt-2 text-center">
+                                        Formats acceptés : PNG, JPG, WEBP, MP4, WEBM (compressé automatiquement)
+                                    </p>
+                                </div>
+                                <div className="flex space-x-4 w-full">
+                                    <button
+                                        type="button"
+                                        className="flex-1 py-2 px-4 border border-gray-300 rounded-lg hover:bg-gray-50"
+                                        onClick={() => setMediaImportOpen(false)}
+                                    >
+                                        Fermer
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="flex-1 py-2 px-4 bg-orange text-white rounded-lg hover:bg-dark-orange opacity-50 cursor-not-allowed"
+                                        disabled
+                                    >
+                                        Importer
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="flex flex-col items-center">
+                                <div className="w-full max-h-64 mb-4 overflow-hidden rounded-lg bg-gray-100">
+                                    {selectedFile?.type.startsWith('video/') ? (
+                                        <video
+                                            src={selectedFilePreview}
+                                            className="w-full h-full object-contain"
+                                            controls
+                                        />
+                                    ) : (
+                                        <img
+                                            src={selectedFilePreview}
+                                            alt="Aperçu"
+                                            className="w-full h-full object-contain"
+                                        />
+                                    )}
+                                </div>
+                                <div className="flex space-x-4 w-full">
+                                    <button
+                                        type="button"
+                                        className="flex-1 py-2 px-4 border border-gray-300 rounded-lg hover:bg-gray-50"
+                                        onClick={() => {
+                                            if (selectedFilePreview?.startsWith('blob:')) {
+                                                URL.revokeObjectURL(selectedFilePreview);
+                                            }
+                                            setSelectedFile(null);
+                                            setSelectedFilePreview(null);
+                                            setMediaImportOpen(false);
+                                        }}
+                                    >
+                                        Annuler
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="flex-1 py-2 px-4 bg-orange text-white rounded-lg hover:bg-dark-orange"
+                                        onClick={handleImportConfirm}
+                                    >
+                                        Importer
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
         </div>
     );
 } 

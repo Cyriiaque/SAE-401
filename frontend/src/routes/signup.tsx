@@ -301,11 +301,11 @@ export default function SignUp() {
 
           <div>
             <Button
-              variant="full"
+              variant={isFormValid() ? "full" : "notallowed"}
               size="lg"
               className="w-full"
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || !isFormValid()}
             >
               {isSubmitting ? 'Inscription...' : 'S\'inscrire'}
             </Button>

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import Button from '../ui/buttons';
-import { User, uploadImage, getImageUrl } from '../lib/loaders';
+import { User, getImageUrl } from '../lib/loaders';
 import { useAuth } from '../contexts/AuthContext';
 
 const EditProfileModal = ({
@@ -32,7 +32,6 @@ const EditProfileModal = ({
     const modalRef = useRef<HTMLDivElement>(null);
     const avatarInputRef = useRef<HTMLInputElement>(null);
     const bannerInputRef = useRef<HTMLInputElement>(null);
-    const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Effet pour bloquer/débloquer le scroll du body
     useEffect(() => {

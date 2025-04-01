@@ -338,6 +338,9 @@ export default function Profile() {
                                     tweet={post}
                                     onDelete={handleDeleteClick}
                                     onUserProfileClick={handleUserProfileClick}
+                                    onPostUpdated={(updatedTweet) => {
+                                        setPosts(prev => prev.map(p => p.id === updatedTweet.id ? updatedTweet : p));
+                                    }}
                                 />
                             </div>
                         ))}

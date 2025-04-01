@@ -1,12 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
-import { Tweet, uploadImage, getImageUrl, updatePost, deleteMediaFile } from '../lib/loaders';
-import { useAuth } from '../contexts/AuthContext';
+import { Tweet, uploadImage, getImageUrl, updatePost, createPost, deleteMediaFile } from '../lib/loaders';
 
 interface EditPostModalProps {
     isOpen: boolean;
     onClose: () => void;
-    tweet: Tweet;
-    onPostUpdated: (updatedTweet: Tweet) => void;
+    tweet?: Tweet;
+    onPostUpdated?: (updatedTweet: Tweet) => void;
+    onTweetPublished?: (tweet: Tweet) => void;
+    mode?: 'edit' | 'create';
 }
 
 // Ajouter un type augmenté pour HTMLVideoElement avec captureStream
@@ -14,13 +15,19 @@ interface HTMLVideoElementWithCapture extends HTMLVideoElement {
     captureStream?: () => MediaStream;
 }
 
-export default function EditPostModal({ isOpen, onClose, tweet, onPostUpdated }: EditPostModalProps) {
-    const [content, setContent] = useState(tweet.content);
+export default function EditPostModal({
+    isOpen,
+    onClose,
+    tweet,
+    onPostUpdated,
+    onTweetPublished,
+    mode = 'edit'
+}: EditPostModalProps) {
+    const [content, setContent] = useState(tweet?.content || '');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [media, setMedia] = useState<File[]>([]);
     const [mediaPreviews, setMediaPreviews] = useState<string[]>([]);
     const [mediaTypes, setMediaTypes] = useState<('image' | 'video')[]>([]);
-    const [isMediaLoading, setIsMediaLoading] = useState(false);
     const [existingMediaUrls, setExistingMediaUrls] = useState<string[]>([]);
     const [processingFiles, setProcessingFiles] = useState<Record<string, {
         id: string,
@@ -31,12 +38,16 @@ export default function EditPostModal({ isOpen, onClose, tweet, onPostUpdated }:
     const [mediaToDelete, setMediaToDelete] = useState<string[]>([]);
     const maxLength = 280;
     const maxMediaCount = 10;
-    const { user } = useAuth();
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    // Charger les données du post à modifier
+    // Obtenir le titre de la modal selon le mode
+    const getModalTitle = () => {
+        return mode === 'edit' ? 'Modifier le tweet' : 'Créer un tweet';
+    };
+
+    // Charger les données du post à modifier si mode édition
     useEffect(() => {
-        if (tweet && isOpen) {
+        if (tweet && isOpen && mode === 'edit') {
             setContent(tweet.content);
 
             // Charger les médias existants
@@ -59,8 +70,16 @@ export default function EditPostModal({ isOpen, onClose, tweet, onPostUpdated }:
                 setMediaTypes(types);
                 console.log(`Total médias existants chargés: ${mediaUrls.length}, types: ${types.join(', ')}`);
             }
+        } else if (isOpen && mode === 'create') {
+            // Réinitialiser les champs pour une nouvelle création
+            setContent('');
+            setMedia([]);
+            setMediaPreviews([]);
+            setMediaTypes([]);
+            setExistingMediaUrls([]);
+            setMediaToDelete([]);
         }
-    }, [tweet, isOpen]);
+    }, [tweet, isOpen, mode]);
 
     // Fonction pour compresser une image
     const compressImage = (file: File, maxSizeInMB: number = 1): Promise<File> => {
@@ -152,7 +171,7 @@ export default function EditPostModal({ isOpen, onClose, tweet, onPostUpdated }:
                 // Stocker des références pour pouvoir les libérer plus tard
                 const createdObjectURLs = [videoURL];
 
-                videoElement.muted = true;
+                videoElement.muted = false;
                 videoElement.autoplay = false;
                 videoElement.preload = 'metadata';
                 videoElement.src = videoURL;
@@ -219,7 +238,6 @@ export default function EditPostModal({ isOpen, onClose, tweet, onPostUpdated }:
 
                         const recorder = new MediaRecorder(stream, options);
                         const chunks: Blob[] = [];
-                        let startTime = 0;
                         let isRecording = false;
                         let recordingTimeout: number | null = null;
 
@@ -378,7 +396,6 @@ export default function EditPostModal({ isOpen, onClose, tweet, onPostUpdated }:
 
                             isRecording = true;
                             chunks.length = 0;  // Vider les chunks précédents
-                            startTime = videoElement.currentTime;
 
                             recorder.start(100);  // Capturer des chunks toutes les 100ms
 
@@ -476,7 +493,7 @@ export default function EditPostModal({ isOpen, onClose, tweet, onPostUpdated }:
 
                 // Créer un élément vidéo pour l'analyse
                 const videoElement = document.createElement('video');
-                videoElement.muted = true;
+                videoElement.muted = false;
                 videoElement.preload = 'metadata';
 
                 // Créer une URL pour le fichier vidéo
@@ -873,7 +890,7 @@ export default function EditPostModal({ isOpen, onClose, tweet, onPostUpdated }:
                                 };
 
                                 videoElement.preload = 'metadata';
-                                videoElement.muted = true;
+                                videoElement.muted = false;
                                 videoElement.src = objectUrl;
                             });
 
@@ -1006,33 +1023,19 @@ export default function EditPostModal({ isOpen, onClose, tweet, onPostUpdated }:
 
     const handleRemoveMedia = (index: number) => {
         try {
-            // Avant la suppression, journaliser les états actuels
-            console.log("ÉTATS AVANT SUPPRESSION :");
-            console.log("Index à supprimer:", index);
-            console.log("MediaTypes:", [...mediaTypes]);
-            console.log("MediaPreviews:", [...mediaPreviews]);
-            console.log("ExistingMediaUrls:", [...existingMediaUrls]);
-            console.log("Media (nouveaux fichiers):", [...media]);
-
             // Vérifier si l'index est valide
             if (index < 0 || index >= mediaPreviews.length) {
-                console.error(`Index ${index} hors limites pour la suppression de média`);
                 return;
             }
-
-            // Capture du type de média pour le débogage
-            const mediaType = mediaTypes[index];
 
             // Mise à jour synchronisée de tous les tableaux
             // Approche en deux temps: copie puis mise à jour d'état
 
             if (index < existingMediaUrls.length) {
                 // C'est un média existant
-                console.log(`Suppression du média existant à l'index ${index}, type: ${mediaType}`);
 
                 // Récupérer le nom du fichier à supprimer
                 const mediaFilename = existingMediaUrls[index];
-                console.log(`Fichier ${mediaFilename} marqué pour suppression (sera supprimé après mise à jour)`);
 
                 // Ajouter le fichier à la liste des fichiers à supprimer plus tard
                 setMediaToDelete(prev => [...prev, mediaFilename]);
@@ -1052,16 +1055,19 @@ export default function EditPostModal({ isOpen, onClose, tweet, onPostUpdated }:
                     newTypes.splice(index, 1);
                     return newTypes;
                 });
+
+                // Appeler la fonction pour supprimer le fichier du serveur
+                deleteMediaFile(mediaFilename).catch(() => {
+                    // Ignorer les erreurs de suppression pour éviter de bloquer le flux
+                });
             } else {
                 // C'est un nouveau média
                 const newIndex = index - existingMediaUrls.length;
-                console.log(`Suppression du nouveau média à l'index relatif ${newIndex}, type: ${mediaType}`);
 
                 // Libérer le blob URL pour éviter les fuites de mémoire
                 const previewUrl = mediaPreviews[index];
                 if (previewUrl.startsWith('blob:')) {
                     URL.revokeObjectURL(previewUrl);
-                    console.log(`URL blob révoquée: ${previewUrl}`);
                 }
 
                 const newMedia = [...media];
@@ -1080,116 +1086,109 @@ export default function EditPostModal({ isOpen, onClose, tweet, onPostUpdated }:
                     return newTypes;
                 });
             }
-
-            // Après une courte attente, vérifier que les états ont été mis à jour correctement
-            setTimeout(() => {
-                console.log("ÉTATS APRÈS SUPPRESSION :");
-                console.log("MediaTypes:", [...mediaTypes]);
-                console.log("MediaPreviews:", [...mediaPreviews]);
-                console.log("ExistingMediaUrls:", [...existingMediaUrls]);
-                console.log("Media (nouveaux fichiers):", [...media]);
-                console.log("Médias à supprimer après mise à jour:", [...mediaToDelete]);
-            }, 100);
         } catch (error) {
-            console.error("Erreur lors de la suppression du média:", error);
+            // Ignorer les erreurs pour éviter de bloquer l'interface
         }
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
-        // Autoriser la soumission si du contenu multimédia est présent
-        if (mediaPreviews.length === 0 && !content.trim()) return;
-
-        // Vérifier uniquement la longueur du texte s'il est présent
-        if (content.length > maxLength) return;
-
-        // Vérifier que les médias ne sont pas trop volumineux avant l'envoi
-        const MAX_UPLOAD_SIZE = 50 * 1024 * 1024; // 50 Mo maximum par fichier
-        const oversizedFiles = media.filter(file => file.size > MAX_UPLOAD_SIZE);
-        if (oversizedFiles.length > 0) {
-            const fileSizes = oversizedFiles.map(f => `${f.name}: ${Math.round(f.size / (1024 * 1024))}Mo`).join(', ');
-            alert(`Certains fichiers sont trop volumineux pour être envoyés (>${MAX_UPLOAD_SIZE / (1024 * 1024)}Mo): ${fileSizes}. Veuillez d'abord les compresser.`);
+        // Vérifier si le contenu est vide et s'il n'y a pas de média
+        if (!content.trim() && media.length === 0 && existingMediaUrls.length === 0) {
             return;
         }
 
-        // Vérifier que le total des médias n'excède pas une limite raisonnable
-        const TOTAL_MAX_SIZE = 200 * 1024 * 1024; // 200 Mo au total
-        const totalSize = media.reduce((total, file) => total + file.size, 0);
-        if (totalSize > TOTAL_MAX_SIZE) {
-            alert(`Le total de vos médias (${Math.round(totalSize / (1024 * 1024))}Mo) dépasse la limite autorisée (${TOTAL_MAX_SIZE / (1024 * 1024)}Mo). Veuillez supprimer ou compresser certains fichiers.`);
+        // Vérifier la longueur du contenu
+        if (content.length > maxLength) {
             return;
         }
 
         setIsSubmitting(true);
+
         try {
-            // Récupérer les médias existants au début de l'édition
-            const originalMediaUrls = tweet.mediaUrl ? tweet.mediaUrl.split(',') : [];
-            console.log("Médias originaux:", originalMediaUrls);
-            console.log("Médias conservés:", existingMediaUrls);
-            console.log("Médias marqués pour suppression:", mediaToDelete);
+            // Télécharger les nouveaux médias
+            const uploadedMediaUrls: string[] = [];
 
-            // Préparer les URLs de médias (existantes + nouvelles)
-            const updatedMediaUrls: string[] = [...existingMediaUrls];
+            // Stocker les URLs des médias existants qui ne sont pas supprimés
+            let retainedExistingMediaUrls: string[] = [];
 
-            // Uploader les nouveaux médias
-            let uploadedCount = 0;
-            for (const mediaFile of media) {
-                try {
-                    console.log(`Upload du fichier ${mediaFile.name} (${Math.round(mediaFile.size / (1024 * 1024))}Mo)...`);
-                    const response = await uploadImage(mediaFile, 'post');
+            if (mode === 'edit' && existingMediaUrls.length > 0) {
+                // Identifier les médias existants conservés
+                retainedExistingMediaUrls = existingMediaUrls.filter(url => !mediaToDelete.includes(url));
+            }
 
-                    if (!response || !response.filename) {
-                        console.error('Réponse d\'upload invalide:', response);
-                        throw new Error('Réponse invalide du serveur lors de l\'upload');
+            // Upload des nouveaux médias si présents
+            if (media.length > 0) {
+                // Vérifier la taille totale avant upload
+                const totalSize = media.reduce((acc, file) => acc + file.size, 0);
+                const maxTotalSize = 200 * 1024 * 1024; // 200 MB max total
+
+                if (totalSize > maxTotalSize) {
+                    throw new Error(`La taille totale des médias (${Math.round(totalSize / 1024 / 1024)}Mo) dépasse la limite de 200Mo`);
+                }
+
+                // Uploader chaque média
+                for (const file of media) {
+                    // Vérifier la taille individuelle
+                    if (file.size > 50 * 1024 * 1024) {
+                        throw new Error(`Le fichier ${file.name} (${Math.round(file.size / 1024 / 1024)}Mo) dépasse la limite de 50Mo`);
                     }
 
-                    updatedMediaUrls.push(response.filename);
-                    uploadedCount++;
-                    console.log(`Fichier uploadé avec succès (${uploadedCount}/${media.length}): ${response.filename}`);
-                } catch (uploadError) {
-                    console.error(`Erreur lors de l'upload du fichier ${mediaFile.name}:`, uploadError);
-                    const errorMessage = uploadError instanceof Error ? uploadError.message : 'Erreur inconnue';
-                    throw new Error(`Erreur lors de l'upload du fichier ${mediaFile.name}: ${errorMessage}`);
+                    const response = await uploadImage(file, 'post');
+                    uploadedMediaUrls.push(response.filename);
                 }
             }
 
-            // Si tous les uploads ont réussi, mettre à jour le post
-            console.log(`Mise à jour du post avec ${updatedMediaUrls.length} médias...`);
-            const response = await updatePost(tweet.id, content.trim(), updatedMediaUrls);
+            // Combiner les médias existants conservés et les nouveaux médias
+            const allMediaUrls = [...retainedExistingMediaUrls, ...uploadedMediaUrls];
 
-            // Vérifier que la réponse est valide
-            if (!response || !response.id) {
-                console.error('Réponse de mise à jour invalide:', response);
-                throw new Error('Réponse invalide du serveur lors de la mise à jour du post');
-            }
+            let updatedTweet;
 
-            console.log('Post mis à jour avec succès');
-
-            // Maintenant que le post est mis à jour avec succès, supprimer les fichiers médias qui ne sont plus utilisés
-            if (mediaToDelete.length > 0) {
-                console.log(`Suppression de ${mediaToDelete.length} fichiers médias qui ne sont plus utilisés...`);
-                const deletionPromises = mediaToDelete.map(filename =>
-                    deleteMediaFile(filename)
-                        .then(() => console.log(`Fichier ${filename} supprimé avec succès`))
-                        .catch(err => console.error(`Erreur lors de la suppression du fichier ${filename}:`, err))
+            if (mode === 'edit' && tweet) {
+                // Mode édition: Mettre à jour le post existant
+                updatedTweet = await updatePost(
+                    tweet.id,
+                    content,
+                    allMediaUrls.length > 0 ? allMediaUrls : undefined
                 );
 
-                try {
-                    await Promise.all(deletionPromises);
-                    console.log('Tous les fichiers inutilisés ont été nettoyés');
-                } catch (err) {
-                    console.error('Erreur lors du nettoyage des fichiers:', err);
-                    // On continue même si la suppression des fichiers échoue
+                // Supprimer les médias qui ne sont plus utilisés
+                if (mediaToDelete.length > 0) {
+                    for (const mediaUrl of mediaToDelete) {
+                        try {
+                            // Extraire le nom du fichier de l'URL
+                            const filename = mediaUrl.includes('/')
+                                ? mediaUrl.split('/').pop() || mediaUrl
+                                : mediaUrl;
+
+                            await deleteMediaFile(filename);
+                        } catch (error) {
+                            // Ne pas bloquer le processus si la suppression échoue
+                        }
+                    }
+                }
+
+                if (onPostUpdated) {
+                    onPostUpdated(updatedTweet);
+                }
+            } else {
+                // Mode création: Créer un nouveau post
+                const newTweet = await createPost(
+                    content,
+                    allMediaUrls.length > 0 ? allMediaUrls : undefined
+                );
+
+                if (onTweetPublished) {
+                    onTweetPublished(newTweet);
                 }
             }
 
-            onPostUpdated(response);
-            onClose();
+            // Réinitialiser l'état et fermer la modal
+            handleModalClose();
         } catch (error) {
-            console.error('Erreur lors de la mise à jour du post:', error);
-            const errorMessage = error instanceof Error ? error.message : 'Erreur inconnue';
-            alert(`Erreur lors de la mise à jour du post: ${errorMessage}`);
+            // Afficher l'erreur à l'utilisateur
+            alert(error instanceof Error ? error.message : 'Une erreur est survenue lors de la soumission');
         } finally {
             setIsSubmitting(false);
         }
@@ -1218,20 +1217,21 @@ export default function EditPostModal({ isOpen, onClose, tweet, onPostUpdated }:
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-lg w-full max-w-2xl mx-auto overflow-hidden max-h-[90vh] flex flex-col">
-                <div className="p-4 border-b border-gray-200 flex justify-between items-center">
-                    <h2 className="text-xl font-bold">Modifier le tweet</h2>
+        <div className="fixed inset-0 bg-black/70 bg-opacity-50 z-50 flex items-center justify-center">
+            <div className="bg-white w-full max-w-lg rounded-xl shadow-xl p-4 max-h-[90vh] overflow-y-auto">
+                <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-xl font-bold">{getModalTitle()}</h2>
                     <button
                         onClick={handleModalClose}
-                        className="text-gray-500 hover:text-gray-700"
+                        className="text-gray-500 hover:text-gray-700 transition-colors"
                     >
-                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                         </svg>
                     </button>
                 </div>
-                <form onSubmit={handleSubmit} className="p-4">
+
+                <form onSubmit={handleSubmit}>
                     <textarea
                         value={content}
                         onChange={(e) => setContent(e.target.value)}
@@ -1241,16 +1241,12 @@ export default function EditPostModal({ isOpen, onClose, tweet, onPostUpdated }:
                             : 'border-gray-300 focus:ring-orange'
                             }`}
                         rows={4}
-                        maxLength={maxLength}
                     />
-                    <div className={`text-left text-sm ${content.length > maxLength ? 'text-red-500' : 'text-gray-500'}`}>
+                    <div className={`text-right text-sm ${content.length > maxLength ? 'text-red-500' : 'text-gray-500'}`}>
                         {content.length}/{maxLength}
                     </div>
-                    {isMediaLoading ? (
-                        <div className="p-4 text-center text-gray-500">
-                            Chargement...
-                        </div>
-                    ) : mediaPreviews.length > 0 && (
+
+                    {mediaPreviews.length > 0 && (
                         <div
                             className="
                                 p-4 
@@ -1307,7 +1303,6 @@ export default function EditPostModal({ isOpen, onClose, tweet, onPostUpdated }:
                                             type="button"
                                             onClick={(e) => {
                                                 e.stopPropagation(); // Empêcher la propagation des événements
-                                                console.log(`Clic pour supprimer le média ${index}, type: ${isVideo ? 'video' : 'image'}`);
                                                 handleRemoveMedia(index);
                                             }}
                                             className={`
@@ -1408,15 +1403,15 @@ export default function EditPostModal({ isOpen, onClose, tweet, onPostUpdated }:
                             ))}
                         </div>
                     )}
-                    <div className="mt-4 flex justify-between items-center">
-                        <div className="flex items-center space-x-4">
+                    <div className="flex justify-between mt-4">
+                        <div className="flex space-x-2">
                             <input
                                 type="file"
                                 ref={fileInputRef}
                                 onChange={handleMediaChange}
                                 accept="image/*,video/*"
-                                multiple
                                 className="hidden"
+                                multiple
                             />
                             <button
                                 type="button"
@@ -1441,10 +1436,16 @@ export default function EditPostModal({ isOpen, onClose, tweet, onPostUpdated }:
                         </div>
                         <button
                             type="submit"
-                            disabled={mediaPreviews.length === 0 && !content.trim() || content.length > maxLength || isSubmitting}
-                            className="bg-orange text-white px-6 py-2 rounded-full font-semibold hover:bg-dark-orange disabled:opacity-50 disabled:cursor-not-allowed"
+                            disabled={
+                                isSubmitting ||
+                                (content.length === 0 && media.length === 0 && existingMediaUrls.length === 0) ||
+                                content.length > maxLength
+                            }
+                            className="bg-orange hover:bg-orange/80 text-white font-bold py-2 px-4 rounded-full disabled:bg-orange/50 disabled:cursor-not-allowed"
                         >
-                            {isSubmitting ? 'Mise à jour...' : 'Mettre à jour'}
+                            {isSubmitting
+                                ? mode === 'edit' ? 'Mise à jour...' : 'Publication...'
+                                : mode === 'edit' ? 'Modifier' : 'Publier'}
                         </button>
                     </div>
                 </form>

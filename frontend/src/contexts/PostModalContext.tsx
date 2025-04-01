@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 import { Tweet } from '../lib/loaders';
-import PostModal from '../components/PostModal';
+import EditPostModal from '../components/EditPostModal';
 
 interface PostModalContextType {
     openPostModal: () => void;
@@ -30,9 +30,10 @@ export function PostModalProvider({ children, onTweetPublished }: { children: Re
     return (
         <PostModalContext.Provider value={{ openPostModal, closePostModal, onTweetPublished }}>
             {children}
-            <PostModal
+            <EditPostModal
                 isOpen={isOpen}
                 onClose={closePostModal}
+                mode="create"
                 onTweetPublished={(tweet) => {
                     const event = new CustomEvent('tweetPublished', { detail: tweet });
                     window.dispatchEvent(event);

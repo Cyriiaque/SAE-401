@@ -62,7 +62,6 @@ export default function UserProfile({ userId, onClose }: UserProfileProps) {
     const [formattedBiography, setFormattedBiography] = useState('');
     const [isFollowing, setIsFollowing] = useState(false);
     const [confirmUnfollowOpen, setConfirmUnfollowOpen] = useState(false);
-    const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         const loadUserProfile = async () => {

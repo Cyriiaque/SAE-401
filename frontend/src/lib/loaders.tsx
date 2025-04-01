@@ -65,6 +65,21 @@ interface PostsResponse {
     next_page: number | null;
 }
 
+// Types pour les réponses
+export interface Reply {
+    id: number;
+    reply: string;
+    replied_at: string;
+    user: {
+        id: number;
+        name: string;
+        mention: string;
+        avatar: string | null;
+        isbanned?: boolean;
+    };
+    isLiked: boolean;
+}
+
 // Fonctions d'authentification
 export async function register(data: RegisterData): Promise<RegisterResponse> {
     const response = await fetch(`${API_BASE_URL}/register`, {
@@ -752,4 +767,69 @@ export async function banUser(userId: number): Promise<void> {
 export function getImageUrl(filename: string | null): string {
     if (!filename) return '';
     return `http://localhost:8080/images/${filename}`;
+}
+
+// Fonctions pour les réponses aux posts
+export async function createReply(postId: number, replyContent: string): Promise<Reply> {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        logout();
+        throw new Error('Non authentifié');
+    }
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/posts/${postId}/reply`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+                reply: replyContent
+            })
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+
+            if (response.status === 401) {
+                logout();
+                throw new Error('Session expirée - veuillez vous reconnecter');
+            }
+
+            throw new Error(error.errors || error.message || 'Erreur lors de la création de la réponse');
+        }
+
+        return await response.json();
+    } catch (error) {
+        throw error;
+    }
+}
+
+export async function fetchReplies(postId: number): Promise<{ replies: Reply[] }> {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        logout();
+        throw new Error('Non authentifié');
+    }
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/posts/${postId}/replies`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        if (!response.ok) {
+            if (response.status === 401) {
+                logout();
+                throw new Error('Session expirée');
+            }
+            throw new Error('Erreur lors de la récupération des réponses');
+        }
+
+        return await response.json();
+    } catch (error) {
+        throw error;
+    }
 }

@@ -107,7 +107,13 @@ export default function SignIn() {
           </div>
 
           <div>
-            <Button variant="full" size="lg" className="w-full" type="submit">
+            <Button
+              variant={!email.trim() || !password.trim() ? "notallowed" : "full"}
+              size="lg"
+              className="w-full"
+              type="submit"
+              disabled={isSubmitting || !email.trim() || !password.trim()}
+            >
               {isSubmitting ? 'Connexion...' : 'Se connecter'}
             </Button>
           </div>
