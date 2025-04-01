@@ -1,4 +1,4 @@
-import { Tweet, fetchReplies, createReply, Reply, getLikeStatus, getImageUrl } from '../lib/loaders';
+import { Tweet, fetchReplies, createReply, Reply, getLikeStatus, getImageUrl, checkBlockStatus } from '../lib/loaders';
 import { useState, useEffect, useRef } from 'react';
 import { likePost } from '../lib/loaders';
 import { useAuth } from '../contexts/AuthContext';
@@ -95,6 +95,7 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
   const [replyCount, setReplyCount] = useState<number>(0);
   const [userHasReplied, setUserHasReplied] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isBlockedByAuthor, setIsBlockedByAuthor] = useState<boolean>(false);
   const replyInputRef = useRef<HTMLTextAreaElement>(null);
   const replyFormRef = useRef<HTMLDivElement>(null);
   const [displayedRepliesCount, setDisplayedRepliesCount] = useState<number>(3);
@@ -135,6 +136,22 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
     checkLikeStatus();
   }, [currentTweet.id]);
 
+  // Vérifier si l'utilisateur actuel est bloqué par l'auteur du post
+  useEffect(() => {
+    const checkIfBlockedByAuthor = async () => {
+      if (user && currentTweet.user && user.id !== currentTweet.user.id) {
+        try {
+          const blockStatus = await checkBlockStatus(currentTweet.user.id);
+          setIsBlockedByAuthor(blockStatus.isBlockedByTarget);
+        } catch (error) {
+          console.error('Erreur lors de la vérification du statut de blocage:', error);
+        }
+      }
+    };
+
+    checkIfBlockedByAuthor();
+  }, [currentTweet.user?.id, user?.id]);
+
   useEffect(() => {
     // Au chargement initial, vérifier s'il y a des réponses
     const checkRepliesExist = async () => {
@@ -157,6 +174,13 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
   }, [currentTweet.id, user]);
 
   const handleLike = async () => {
+    // Si l'utilisateur est bloqué par l'auteur, empêcher l'interaction
+    if (isBlockedByAuthor) {
+      setErrorMessage("Vous ne pouvez pas interagir avec ce post car l'auteur vous a bloqué.");
+      setTimeout(() => setErrorMessage(null), 3000);
+      return;
+    }
+
     try {
       const response = await likePost(currentTweet.id);
       setLikes(response.likes);
@@ -215,6 +239,13 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
     e.preventDefault();
 
     if (!replyContent.trim() || isSubmittingReply || userHasReplied) return;
+
+    // Si l'utilisateur est bloqué par l'auteur, empêcher l'interaction
+    if (isBlockedByAuthor) {
+      setErrorMessage("Vous ne pouvez pas répondre à ce post car l'auteur vous a bloqué.");
+      setTimeout(() => setErrorMessage(null), 3000);
+      return;
+    }
 
     setIsSubmittingReply(true);
 
@@ -560,8 +591,9 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
                 {/* Bouton pour afficher/masquer les réponses - Suppression du texte */}
                 <button
                   onClick={handleToggleReplies}
-                  className={`flex items-center cursor-pointer group ${showReplies ? 'text-orange' : 'text-gray-500 hover:text-orange'}`}
-                  title={showReplies ? "Masquer les réponses" : "Afficher les réponses"}
+                  className={`flex items-center cursor-pointer group ${showReplies ? 'text-orange' : 'text-gray-500 hover:text-orange'} ${isBlockedByAuthor ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  title={isBlockedByAuthor ? "Vous ne pouvez pas interagir avec ce post" : (showReplies ? "Masquer les réponses" : "Afficher les réponses")}
+                  disabled={isBlockedByAuthor}
                 >
                   <svg
                     className={`h-5 w-5 fill-none ${showReplies ? 'stroke-orange' : 'group-hover:stroke-orange'}`}
@@ -593,7 +625,9 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
 
                 <button
                   onClick={handleLike}
-                  className={`flex items-center space-x-2 cursor-pointer group ${isLiked ? 'text-orange' : 'text-gray-500 hover:text-orange'}`}
+                  className={`flex items-center space-x-2 cursor-pointer group ${isLiked ? 'text-orange' : 'text-gray-500 hover:text-orange'} ${isBlockedByAuthor ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  disabled={isBlockedByAuthor}
+                  title={isBlockedByAuthor ? "Vous ne pouvez pas interagir avec ce post" : "J'aime"}
                 >
                   <svg
                     className={`h-5 w-5 ${isLiked ? 'fill-orange' : 'fill-none text-gray-500 group-hover:stroke-orange'}`}
@@ -668,7 +702,7 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
           <div className="absolute left-10 top-0 w-[2px] h-full bg-gray-300"></div>
 
           {/* Si l'utilisateur n'a pas répondu et est connecté, on affiche le formulaire de réponse */}
-          {user && !userHasReplied && (
+          {user && !userHasReplied && !isBlockedByAuthor && (
             <div ref={replyFormRef} className="relative pt-2">
               {/* Barre horizontale */}
               <div className="absolute left-6.5 top-6 h-[2px] w-6 bg-gray-300"></div>
@@ -723,8 +757,17 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
             </div>
           )}
 
+          {/* Message si l'utilisateur est bloqué par l'auteur */}
+          {user && isBlockedByAuthor && (
+            <div className="relative">
+              <div className="ml-15 pl-5 text-sm text-red-600 italic border-b border-gray-300 pb-3">
+                Vous ne pouvez pas répondre à ce post car l'auteur vous a bloqué
+              </div>
+            </div>
+          )}
+
           {/* Message si l'utilisateur a déjà répondu */}
-          {user && userHasReplied && (
+          {user && userHasReplied && !isBlockedByAuthor && (
             <div className="relative">
               <div className="ml-15 pl-5 text-sm text-gray-600 italic border-b border-gray-300 pb-3">
                 Vous avez déjà répondu à ce post

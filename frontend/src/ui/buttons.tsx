@@ -12,6 +12,8 @@ const buttonVariants = cva("rounded-full font-bold focus:outline-none transition
         "bg-orange text-white hover:bg-dark-orange",
       notallowed:
         "bg-soft-orange text-white cursor-not-allowed",
+      danger:
+        "bg-red-500 text-white hover:bg-red-600 focus:bg-red-600 disabled:hover:bg-red-500",
     },
     size: {
       default: "h-10 px-4 py-2",
@@ -29,7 +31,7 @@ const buttonVariants = cva("rounded-full font-bold focus:outline-none transition
 // Interface simplifiée avec uniquement les props nécessaires
 
 interface ButtonPropsCVA {
-  variant?: "default" | "outline" | "full" | "notallowed";
+  variant?: "default" | "outline" | "full" | "notallowed" | "danger";
   size?: "default" | "sm" | "lg" | "xl";
   className?: string;
 }

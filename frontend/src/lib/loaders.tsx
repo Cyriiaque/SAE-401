@@ -552,7 +552,7 @@ export async function fetchUserProfile(userId: number): Promise<User> {
     return response.json();
 }
 
-export async function checkFollowStatus(targetUserId: number): Promise<{ isFollowing: boolean }> {
+export async function checkFollowStatus(targetUserId: number): Promise<{ isFollowing: boolean, isBlockedByTarget: boolean }> {
     const token = localStorage.getItem('token');
     if (!token) {
         throw new Error('Non authentifié');
@@ -832,4 +832,82 @@ export async function fetchReplies(postId: number): Promise<{ replies: Reply[] }
     } catch (error) {
         throw error;
     }
+}
+
+// Nouvelles fonctions pour la gestion du blocage
+
+export async function checkBlockStatus(targetUserId: number): Promise<{ isBlocked: boolean, isBlockedByTarget: boolean }> {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('Non authentifié');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/users/${targetUserId}/block-status`, {
+        method: 'GET',
+        headers: {
+            'Authorization': `Bearer ${token}`
+        }
+    });
+
+    if (!response.ok) {
+        if (response.status === 401) {
+            logout();
+            throw new Error('Session expirée');
+        }
+        throw new Error('Erreur lors de la vérification du statut de blocage');
+    }
+
+    return response.json();
+}
+
+export async function toggleBlockUser(targetUserId: number): Promise<{ isBlocked: boolean }> {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('Non authentifié');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/users/${targetUserId}/toggle-block`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${token}`
+        }
+    });
+
+    if (!response.ok) {
+        if (response.status === 401) {
+            logout();
+            throw new Error('Session expirée');
+        }
+        if (response.status === 400) {
+            const error = await response.json();
+            throw new Error(error.message || 'Opération non autorisée');
+        }
+        throw new Error('Erreur lors du changement de statut de blocage');
+    }
+
+    return response.json();
+}
+
+export async function fetchBlockedUsers(): Promise<{ blockedUsers: User[] }> {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('Non authentifié');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/users/blocked`, {
+        method: 'GET',
+        headers: {
+            'Authorization': `Bearer ${token}`
+        }
+    });
+
+    if (!response.ok) {
+        if (response.status === 401) {
+            logout();
+            throw new Error('Session expirée');
+        }
+        throw new Error('Erreur lors de la récupération des utilisateurs bloqués');
+    }
+
+    return response.json();
 }

@@ -24,6 +24,9 @@ class UserInteraction
     #[ORM\Column(type: 'boolean', options: ['default' => false])]
     private ?bool $follow = null;
 
+    #[ORM\Column(type: 'boolean', options: ['default' => false])]
+    private ?bool $isBlocked = false;
+
     public function getId(): ?int
     {
         return $this->id;
@@ -61,6 +64,18 @@ class UserInteraction
     public function setFollow(bool $follow): static
     {
         $this->follow = $follow;
+
+        return $this;
+    }
+
+    public function isBlocked(): ?bool
+    {
+        return $this->isBlocked;
+    }
+
+    public function setIsBlocked(bool $isBlocked): static
+    {
+        $this->isBlocked = $isBlocked;
 
         return $this;
     }

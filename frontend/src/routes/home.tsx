@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { usePostModal } from '../contexts/PostModalContext';
 import TweetCard from '../components/TweetCard';
 import Sidebar from '../components/Sidebar';
-import { fetchPosts, Tweet, fetchFollowedPosts, getImageUrl } from '../lib/loaders';
+import { fetchPosts, Tweet, fetchFollowedPosts, getImageUrl, fetchBlockedUsers, User } from '../lib/loaders';
 import UserProfile from '../components/UserProfile';
 import Button from '../ui/buttons';
 
@@ -126,6 +126,7 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<'actualite' | 'suivis'>('actualite');
   const observerRef = useRef<IntersectionObserver | null>(null);
   const loadMoreTriggerRef = useRef<HTMLDivElement>(null);
+  const [blockedUsers, setBlockedUsers] = useState<User[]>([]);
 
   // Effet pour bloquer/débloquer le scroll du body
   useEffect(() => {
@@ -141,6 +142,22 @@ export default function Home() {
     };
   }, [selectedUserId]);
 
+  // Récupérer la liste des utilisateurs bloqués au chargement
+  useEffect(() => {
+    const getBlockedUsers = async () => {
+      if (user) {
+        try {
+          const response = await fetchBlockedUsers();
+          setBlockedUsers(response.blockedUsers);
+        } catch (error) {
+          console.error('Erreur lors de la récupération des utilisateurs bloqués:', error);
+        }
+      }
+    };
+
+    getBlockedUsers();
+  }, [user]);
+
   const loadPosts = async (pageNumber: number) => {
     if (!user || !hasMore) return;
 
@@ -153,10 +170,16 @@ export default function Home() {
         response = await fetchFollowedPosts(pageNumber);
       }
 
+      // Filtrer les posts pour exclure ceux des utilisateurs bloqués
+      const blockedUserIds = blockedUsers.map(blockedUser => blockedUser.id);
+      const filteredPosts = response.posts.filter(post =>
+        post.user && !blockedUserIds.includes(post.user.id)
+      );
+
       if (pageNumber === 1) {
-        setPosts(response.posts);
+        setPosts(filteredPosts);
       } else {
-        setPosts(prev => [...prev, ...response.posts]);
+        setPosts(prev => [...prev, ...filteredPosts]);
       }
       setHasMore(!!response.next_page);
     } catch (error) {
@@ -165,11 +188,12 @@ export default function Home() {
     setLoading(false);
   };
 
+  // Recharger les posts quand la liste des utilisateurs bloqués change
   useEffect(() => {
     if (user) {
       loadPosts(1);
     }
-  }, [user?.id, activeTab]);
+  }, [user?.id, activeTab, blockedUsers]);
 
   // Créer un Intersection Observer pour le chargement infini
   const handleObserver = useCallback((entries: IntersectionObserverEntry[]) => {
@@ -203,16 +227,47 @@ export default function Home() {
     };
   }, [handleObserver]);
 
+  // Mettre à jour la liste des utilisateurs bloqués lorsque le statut de blocage change
+  useEffect(() => {
+    const handleBlockStatusChanged = (event: Event) => {
+      // Conversion de type sécurisée
+      const customEvent = event as CustomEvent<{ userId: number, isBlocked: boolean }>;
+
+      // Recharger la liste des utilisateurs bloqués
+      const updateBlockedUsers = async () => {
+        try {
+          const response = await fetchBlockedUsers();
+          setBlockedUsers(response.blockedUsers);
+        } catch (error) {
+          console.error('Erreur lors du rechargement des utilisateurs bloqués:', error);
+        }
+      };
+
+      updateBlockedUsers();
+    };
+
+    window.addEventListener('userBlockStatusChanged', handleBlockStatusChanged);
+    return () => {
+      window.removeEventListener('userBlockStatusChanged', handleBlockStatusChanged);
+    };
+  }, []);
+
   useEffect(() => {
     const handleTweetPublished = (event: CustomEvent<Tweet>) => {
-      setPosts(prev => [event.detail, ...prev]);
+      const newTweet = event.detail;
+
+      // Vérifier si l'auteur du tweet n'est pas bloqué
+      const blockedUserIds = blockedUsers.map(blockedUser => blockedUser.id);
+      if (newTweet.user && !blockedUserIds.includes(newTweet.user.id)) {
+        setPosts(prev => [newTweet, ...prev]);
+      }
     };
 
     window.addEventListener('tweetPublished', handleTweetPublished as EventListener);
     return () => {
       window.removeEventListener('tweetPublished', handleTweetPublished as EventListener);
     };
-  }, []);
+  }, [blockedUsers]);
 
   const refreshPosts = () => {
     loadPosts(1);

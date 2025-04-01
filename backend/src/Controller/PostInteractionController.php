@@ -13,6 +13,8 @@ use Symfony\Component\Routing\Annotation\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 use Symfony\Component\Security\Http\Attribute\CurrentUser;
 use App\Entity\PostInteraction;
+use App\Entity\User;
+use App\Repository\UserInteractionRepository;
 
 class PostInteractionController extends AbstractController
 {
@@ -22,6 +24,7 @@ class PostInteractionController extends AbstractController
         int $id,
         PostRepository $postRepository,
         PostInteractionRepository $interactionRepository,
+        UserInteractionRepository $userInteractionRepository,
         EntityManagerInterface $entityManager,
         #[CurrentUser] $user
     ): JsonResponse {
@@ -29,6 +32,17 @@ class PostInteractionController extends AbstractController
 
         if (!$post) {
             return $this->json(['message' => 'Post non trouvé'], Response::HTTP_NOT_FOUND);
+        }
+
+        // Vérifier si l'utilisateur est bloqué par l'auteur du post
+        $userInteraction = $userInteractionRepository->findOneBy([
+            'source' => $post->getIdUser(),
+            'target' => $user,
+            'isBlocked' => true
+        ]);
+
+        if ($userInteraction) {
+            return $this->json(['message' => 'Vous ne pouvez pas interagir avec ce post'], Response::HTTP_FORBIDDEN);
         }
 
         // Vérifier si l'utilisateur a déjà une interaction avec ce post
@@ -94,6 +108,7 @@ class PostInteractionController extends AbstractController
         Request $request,
         PostRepository $postRepository,
         PostInteractionRepository $interactionRepository,
+        UserInteractionRepository $userInteractionRepository,
         EntityManagerInterface $entityManager,
         #[CurrentUser] $user
     ): JsonResponse {
@@ -113,6 +128,17 @@ class PostInteractionController extends AbstractController
         // Limiter la longueur de la réponse
         if (strlen($data['reply']) > 280) {
             return $this->json(['message' => 'La réponse ne doit pas dépasser 280 caractères'], Response::HTTP_BAD_REQUEST);
+        }
+
+        // Vérifier si l'utilisateur est bloqué par l'auteur du post
+        $userInteraction = $userInteractionRepository->findOneBy([
+            'source' => $post->getIdUser(),
+            'target' => $user,
+            'isBlocked' => true
+        ]);
+
+        if ($userInteraction) {
+            return $this->json(['message' => 'Vous ne pouvez pas interagir avec ce post'], Response::HTTP_FORBIDDEN);
         }
 
         // Vérifier si l'utilisateur a déjà une interaction avec ce post

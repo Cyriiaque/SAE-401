@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { User, fetchUserPosts, Tweet, fetchUserProfile, checkFollowStatus, toggleFollow, getImageUrl, deletePost } from '../lib/loaders';
+import { User, fetchUserPosts, Tweet, fetchUserProfile, checkFollowStatus, toggleFollow, getImageUrl, deletePost, checkBlockStatus, toggleBlockUser } from '../lib/loaders';
 import { useAuth } from '../contexts/AuthContext';
 import Button from '../ui/buttons';
 import TweetCard from './TweetCard';
@@ -62,6 +62,9 @@ export default function UserProfile({ userId, onClose }: UserProfileProps) {
     const [formattedBiography, setFormattedBiography] = useState('');
     const [isFollowing, setIsFollowing] = useState(false);
     const [confirmUnfollowOpen, setConfirmUnfollowOpen] = useState(false);
+    const [isBlocked, setIsBlocked] = useState(false);
+    const [isBlockedByUser, setIsBlockedByUser] = useState(false);
+    const [confirmBlockOpen, setConfirmBlockOpen] = useState(false);
 
     useEffect(() => {
         const loadUserProfile = async () => {
@@ -79,6 +82,11 @@ export default function UserProfile({ userId, onClose }: UserProfileProps) {
                 if (currentUser && currentUser.id !== userId) {
                     const followStatus = await checkFollowStatus(userId);
                     setIsFollowing(followStatus.isFollowing);
+                    setIsBlockedByUser(followStatus.isBlockedByTarget);
+
+                    // Vérifier le statut de blocage
+                    const blockStatus = await checkBlockStatus(userId);
+                    setIsBlocked(blockStatus.isBlocked);
                 }
             } catch (error) {
                 console.error('Erreur lors du chargement du profil:', error);
@@ -104,6 +112,12 @@ export default function UserProfile({ userId, onClose }: UserProfileProps) {
     const handleToggleFollow = async () => {
         if (!currentUser || currentUser.id === userId) return;
 
+        // Si l'utilisateur cible a bloqué l'utilisateur courant, ne pas permettre le suivi
+        if (isBlockedByUser) {
+            alert("Vous ne pouvez pas suivre cet utilisateur car il vous a bloqué.");
+            return;
+        }
+
         try {
             if (isFollowing) {
                 // Ouvrir la modal de confirmation pour ne plus suivre
@@ -118,6 +132,23 @@ export default function UserProfile({ userId, onClose }: UserProfileProps) {
         }
     };
 
+    const handleToggleBlock = async () => {
+        if (!currentUser || currentUser.id === userId) return;
+
+        try {
+            if (isBlocked) {
+                // Débloquer directement
+                const result = await toggleBlockUser(userId);
+                setIsBlocked(result.isBlocked);
+            } else {
+                // Ouvrir la modal de confirmation pour bloquer
+                setConfirmBlockOpen(true);
+            }
+        } catch (error) {
+            console.error('Erreur lors du changement de statut de blocage:', error);
+        }
+    };
+
     const confirmUnfollow = async () => {
         try {
             const result = await toggleFollow(userId);
@@ -125,6 +156,28 @@ export default function UserProfile({ userId, onClose }: UserProfileProps) {
             setConfirmUnfollowOpen(false);
         } catch (error) {
             console.error('Erreur lors du désabonnement:', error);
+        }
+    };
+
+    const confirmBlock = async () => {
+        try {
+            const result = await toggleBlockUser(userId);
+            setIsBlocked(result.isBlocked);
+
+            // Si le blocage a réussi, l'utilisateur ne suit plus l'utilisateur bloqué
+            if (result.isBlocked && isFollowing) {
+                setIsFollowing(false);
+            }
+
+            setConfirmBlockOpen(false);
+
+            // Déclencher un événement personnalisé pour informer d'autres composants du changement de statut de blocage
+            const blockEvent = new CustomEvent('userBlockStatusChanged', {
+                detail: { userId, isBlocked: result.isBlocked }
+            });
+            window.dispatchEvent(blockEvent);
+        } catch (error) {
+            console.error('Erreur lors du blocage:', error);
         }
     };
 
@@ -156,92 +209,131 @@ export default function UserProfile({ userId, onClose }: UserProfileProps) {
     }
 
     return (
-        <div className="fixed inset-0 overflow-y-auto">
-            <div className="min-h-screen text-center">
-                <div className="fixed inset-0" onClick={onClose}></div>
-                <div className="relative inline-block w-full max-w-2xl transform overflow-hidden bg-white text-left align-middle shadow-xl transition-all h-full min-h-screen">
-                    {/* Bouton de fermeture */}
-                    <button
-                        onClick={onClose}
-                        className="absolute top-4 left-4 z-50 p-2 rounded-full hover:bg-gray-100 bg-white border border-gray-200 shadow-sm cursor-pointer"
-                        title="Retour"
-                    >
-                        <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            className="h-6 w-6 text-gray-600"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                        >
-                            <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M10 19l-7-7m0 0l7-7m-7 7h18"
-                            />
-                        </svg>
-                    </button>
+        <div className="relative w-full max-w-2xl mx-auto overflow-hidden bg-white shadow-xl min-h-screen">
+            {/* Bouton de fermeture */}
+            <button
+                onClick={onClose}
+                className="absolute top-4 right-4 z-50 p-2 rounded-full hover:bg-gray-100 bg-white border border-gray-200 shadow-sm cursor-pointer"
+                title="Fermer"
+            >
+                <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-6 w-6 text-gray-600"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                >
+                    <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M6 18L18 6M6 6l12 12"
+                    />
+                </svg>
+            </button>
 
-                    {/* Bannière */}
-                    <div className="h-48 bg-gray-200 relative">
-                        {user.banner ? (
-                            <img
-                                src={getImageUrl(user.banner)}
-                                alt="Bannière"
-                                className="w-full h-full object-cover"
-                            />
-                        ) : (
-                            <div className="w-full h-full bg-gray-200 flex items-center justify-center">
-                                <span className="text-gray-400">Aucune bannière</span>
+            {/* Bannière */}
+            <div className="h-48 bg-gray-200 relative">
+                {user.banner ? (
+                    <img
+                        src={getImageUrl(user.banner)}
+                        alt="Bannière"
+                        className="w-full h-full object-cover"
+                    />
+                ) : (
+                    <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+                        <span className="text-gray-400">Aucune bannière</span>
+                    </div>
+                )}
+
+                {/* Photo de profil */}
+                <div className="absolute -bottom-16 left-4">
+                    <img
+                        src={user.avatar ? getImageUrl(user.avatar) : '/default_pp.webp'}
+                        alt={user.name || 'Avatar par défaut'}
+                        className="w-32 h-32 rounded-full border-4 border-white object-cover"
+                    />
+                </div>
+            </div>
+
+            {/* Informations de l'utilisateur */}
+            <div className="mt-20 px-4">
+                <div className="flex flex-col space-y-2">
+                    <div className="flex justify-between items-center">
+                        <h1 className="text-xl font-bold">{user.name}</h1>
+                        {currentUser && currentUser.id !== userId && !isBlockedByUser && (
+                            <div className="flex flex-col sm:flex-row gap-2">
+                                <Button
+                                    variant={isFollowing ? "outline" : "full"}
+                                    onClick={handleToggleFollow}
+                                    className="flex items-center justify-center space-x-2"
+                                    disabled={isBlocked} // Désactiver le bouton de suivi si l'utilisateur est bloqué
+                                >
+                                    {isFollowing ? (
+                                        <>
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+                                            </svg>
+                                            <span>Ne plus suivre</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                            </svg>
+                                            <span>Suivre</span>
+                                        </>
+                                    )}
+                                </Button>
+                                <Button
+                                    variant={isBlocked ? "danger" : "outline"}
+                                    onClick={handleToggleBlock}
+                                    className="flex items-center justify-center space-x-2"
+                                >
+                                    {isBlocked ? (
+                                        <>
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                            </svg>
+                                            <span>Débloquer</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                                            </svg>
+                                            <span>Bloquer</span>
+                                        </>
+                                    )}
+                                </Button>
                             </div>
                         )}
-
-                        {/* Photo de profil */}
-                        <div className="absolute -bottom-16 left-4">
-                            <img
-                                src={user.avatar ? getImageUrl(user.avatar) : '/default_pp.webp'}
-                                alt={user.name || 'Avatar par défaut'}
-                                className="w-32 h-32 rounded-full border-4 border-white object-cover"
-                            />
-                        </div>
-                    </div>
-
-                    {/* Informations de l'utilisateur */}
-                    <div className="mt-15 px-4">
-                        <div className="flex flex-col space-y-2">
-                            <div className="flex justify-between items-center">
-                                <h1 className="text-xl font-bold">{user.name}</h1>
-                                {currentUser && currentUser.id !== userId && (
-                                    <Button
-                                        variant="full"
-                                        onClick={handleToggleFollow}
-                                        className="flex items-center space-x-2"
-                                    >
-                                        {isFollowing ? (
-                                            <>
-                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
-                                                </svg>
-                                                <span>Ne plus suivre</span>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                                                </svg>
-                                                <span>Suivre</span>
-                                            </>
-                                        )}
-                                    </Button>
-                                )}
+                        {currentUser && currentUser.id !== userId && isBlockedByUser && (
+                            <div className="flex items-center text-red-500">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                                </svg>
+                                <span>Vous êtes bloqué par cet utilisateur</span>
                             </div>
-                            <p className="text-gray-500">@{user.mention}</p>
-                            <p className="text-gray-700 whitespace-pre-line">{formattedBiography || 'Aucune biographie'}</p>
-                        </div>
+                        )}
                     </div>
+                    <p className="text-gray-500">@{user.mention}</p>
+                    <p className="text-gray-700 whitespace-pre-line">{formattedBiography || 'Aucune biographie'}</p>
+                </div>
+            </div>
 
-                    {/* Tweets */}
-                    <div className="mt-8 divide-y divide-gray-200 max-h-[50vh] overflow-y-auto">
+            {/* Tweets */}
+            <div className="mt-8 divide-y divide-gray-200 max-h-[50vh] overflow-y-auto">
+                {/* Si l'utilisateur courant a bloqué ou est bloqué par cet utilisateur, afficher un message */}
+                {(isBlocked || isBlockedByUser) ? (
+                    <div className="p-4 text-center text-gray-500">
+                        {isBlocked
+                            ? "Vous avez bloqué cet utilisateur. Ses posts ne sont pas visibles."
+                            : "Vous êtes bloqué par cet utilisateur. Ses posts ne sont pas visibles."}
+                    </div>
+                ) : (
+                    <>
                         {posts.map((post) => (
                             <div key={post.id}>
                                 <TweetCard
@@ -256,8 +348,8 @@ export default function UserProfile({ userId, onClose }: UserProfileProps) {
                                 Aucun post
                             </div>
                         )}
-                    </div>
-                </div>
+                    </>
+                )}
             </div>
 
             {/* Modal de confirmation de désabonnement */}
@@ -269,6 +361,17 @@ export default function UserProfile({ userId, onClose }: UserProfileProps) {
                 message="Êtes-vous sûr de vouloir arrêter de suivre cet utilisateur ?"
                 confirmText="Ne plus suivre"
                 variant="full"
+            />
+
+            {/* Modal de confirmation de blocage */}
+            <ConfirmModal
+                isOpen={confirmBlockOpen}
+                onClose={() => setConfirmBlockOpen(false)}
+                onConfirm={confirmBlock}
+                title="Bloquer l'utilisateur"
+                message={`Êtes-vous sûr de vouloir bloquer ${user.name} ? Vous ne verrez plus ses posts et il ne pourra plus interagir avec vos posts.`}
+                confirmText="Bloquer"
+                variant="danger"
             />
         </div>
     );

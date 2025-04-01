@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Tweet, uploadImage, getImageUrl, updatePost, createPost, deleteMediaFile } from '../lib/loaders';
+import { Tweet, uploadImage, getImageUrl, updatePost, createPost, deleteMediaFile } from '../lib/loaders.tsx';
 
 interface PostModalProps {
     isOpen: boolean;

@@ -6,7 +6,7 @@ import TweetCard from '../components/TweetCard';
 import Sidebar from '../components/Sidebar';
 import ConfirmModal from '../components/ConfirmModal';
 import EditProfileModal from '../components/EditProfileModal';
-import { fetchUserPosts, Tweet, deletePost, updateUser, getImageUrl } from '../lib/loaders';
+import { fetchUserPosts, Tweet, deletePost, updateUser, getImageUrl, fetchBlockedUsers, toggleBlockUser } from '../lib/loaders';
 import UserProfile from '../components/UserProfile';
 import { User } from '../lib/loaders';
 
@@ -64,6 +64,9 @@ export default function Profile() {
     const [postToDelete, setPostToDelete] = useState<number | null>(null);
     const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
     const [isEditProfileModalOpen, setIsEditProfileModalOpen] = useState(false);
+    const [blockedUsers, setBlockedUsers] = useState<User[]>([]);
+    const [showBlockedUsers, setShowBlockedUsers] = useState(false);
+    const [loadingBlockedUsers, setLoadingBlockedUsers] = useState(false);
 
     const loadPosts = async () => {
         if (!user) return;
@@ -138,6 +141,45 @@ export default function Profile() {
             setUser(mergedUserData);
         } catch (error) {
             console.error('Erreur lors de la mise à jour du profil:', error);
+        }
+    };
+
+    const loadBlockedUsers = async () => {
+        if (!user) return;
+
+        setLoadingBlockedUsers(true);
+        try {
+            const response = await fetchBlockedUsers();
+            setBlockedUsers(response.blockedUsers);
+        } catch (error) {
+            console.error('Erreur lors du chargement des utilisateurs bloqués:', error);
+        } finally {
+            setLoadingBlockedUsers(false);
+        }
+    };
+
+    const handleToggleBlockedUsersList = async () => {
+        setShowBlockedUsers(!showBlockedUsers);
+
+        // Charger la liste des utilisateurs bloqués si elle n'a pas déjà été chargée
+        if (!showBlockedUsers && blockedUsers.length === 0) {
+            await loadBlockedUsers();
+        }
+    };
+
+    const handleUnblockUser = async (userId: number) => {
+        try {
+            await toggleBlockUser(userId);
+            // Actualiser la liste des utilisateurs bloqués
+            await loadBlockedUsers();
+
+            // Déclencher un événement personnalisé pour informer d'autres composants du changement de statut de blocage
+            const blockEvent = new CustomEvent('userBlockStatusChanged', {
+                detail: { userId, isBlocked: false }
+            });
+            window.dispatchEvent(blockEvent);
+        } catch (error) {
+            console.error('Erreur lors du déblocage de l\'utilisateur:', error);
         }
     };
 
@@ -327,6 +369,60 @@ export default function Profile() {
                             <h1 className="text-xl font-bold">{user.name}</h1>
                             <p className="text-gray-500">@{user.mention}</p>
                             <p className="text-gray-700 whitespace-pre-line">{formattedBiography || 'Aucune biographie'}</p>
+
+                            {/* Bouton pour afficher les utilisateurs bloqués */}
+                            <div className="mt-4 flex justify-end">
+                                <Button
+                                    onClick={handleToggleBlockedUsersList}
+                                    variant={showBlockedUsers ? "danger" : "outline"}
+                                    className="flex items-center gap-2"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                                    </svg>
+                                    {showBlockedUsers ? "Masquer les utilisateurs bloqués" : "Afficher les utilisateurs bloqués"}
+                                </Button>
+                            </div>
+
+                            {/* Liste des utilisateurs bloqués */}
+                            {showBlockedUsers && (
+                                <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+                                    <h2 className="text-lg font-semibold mb-4">Utilisateurs bloqués</h2>
+
+                                    {loadingBlockedUsers ? (
+                                        <div className="flex justify-center p-4">
+                                            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-orange"></div>
+                                        </div>
+                                    ) : blockedUsers.length === 0 ? (
+                                        <p className="text-gray-500 text-center">Vous n'avez bloqué aucun utilisateur</p>
+                                    ) : (
+                                        <ul className="space-y-3">
+                                            {blockedUsers.map(blockedUser => (
+                                                <li key={blockedUser.id} className="flex items-center justify-between p-3 bg-white rounded-lg shadow-sm">
+                                                    <div className="flex items-center space-x-3 cursor-pointer" onClick={() => handleUserProfileClick(blockedUser.id)}>
+                                                        <img
+                                                            src={blockedUser.avatar ? getImageUrl(blockedUser.avatar) : '/default_pp.webp'}
+                                                            alt={`Avatar de ${blockedUser.name}`}
+                                                            className="w-10 h-10 rounded-full object-cover hover:opacity-80 transition-opacity"
+                                                        />
+                                                        <div>
+                                                            <div className="font-medium">{blockedUser.name}</div>
+                                                            <div className="text-sm text-gray-500">@{blockedUser.mention}</div>
+                                                        </div>
+                                                    </div>
+                                                    <Button
+                                                        onClick={() => handleUnblockUser(blockedUser.id)}
+                                                        variant="outline"
+                                                        size="sm"
+                                                    >
+                                                        Débloquer
+                                                    </Button>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     </div>
 
@@ -366,11 +462,13 @@ export default function Profile() {
 
             {/* Profil utilisateur */}
             {selectedUserId && (
-                <div className="fixed inset-0 bg-white z-50 overflow-y-auto">
-                    <UserProfile
-                        userId={selectedUserId}
-                        onClose={handleCloseUserProfile}
-                    />
+                <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center backdrop-blur-sm overflow-y-auto">
+                    <div className="w-full max-w-2xl mx-auto my-auto">
+                        <UserProfile
+                            userId={selectedUserId}
+                            onClose={handleCloseUserProfile}
+                        />
+                    </div>
                 </div>
             )}
 

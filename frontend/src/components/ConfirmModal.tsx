@@ -9,7 +9,7 @@ interface ConfirmModalProps {
     message: string;
     confirmText?: string;
     cancelText?: string;
-    variant?: 'default' | 'full' | 'outline';
+    variant?: 'default' | 'full' | 'outline' | 'danger';
     icon?: React.ReactNode;
 }
 
@@ -21,6 +21,7 @@ export default function ConfirmModal({
     message,
     confirmText = 'Confirmer',
     cancelText = 'Annuler',
+    variant = 'full',
     icon
 }: ConfirmModalProps) {
     if (!isOpen) return null;
@@ -50,7 +51,7 @@ export default function ConfirmModal({
                         {cancelText}
                     </Button>
                     <Button
-                        variant="full"
+                        variant={variant}
                         onClick={() => {
                             onConfirm();
                             onClose();
