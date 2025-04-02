@@ -89,65 +89,39 @@ class PostController extends AbstractController
         return $this->json(['posts' => $posts]);
     }
 
-    #[Route('/posts', name: 'posts.index', methods: ['GET'])]
+    #[Route('/posts', name: 'posts.list', methods: ['GET'])]
     public function index(
         Request $request,
         PostRepository $postRepository,
         PostInteractionRepository $interactionRepository,
-        #[CurrentUser] $user
-    ): Response {
-        $page = max(1, $request->query->getInt('page', 1));
-        $limit = 5;
+        #[CurrentUser] $user = null
+    ): JsonResponse {
+        // Pagination
+        $page = $request->query->getInt('page', 1);
+        $limit = 20;
         $offset = ($page - 1) * $limit;
 
-        $paginator = $postRepository->paginateAllOrderedByLatest();
-        $totalPostsCount = $paginator->count();
-        $totalPages = ceil($totalPostsCount / $limit);
+        // Récupérer les posts avec pagination
+        $posts = $postRepository->findBy(
+            [], // critères (aucun)
+            ['created_at' => 'DESC'], // tri par date de création décroissante
+            $limit,
+            $offset
+        );
 
-        // Calcul des pages précédente et suivante
-        $previousPage = $page > 1 ? $page - 1 : null;
-        $nextPage = $page < $totalPages ? $page + 1 : null;
-
-        $posts = [];
-        $count = 0;
-        foreach ($paginator as $post) {
-            if ($count >= $offset && $count < ($offset + $limit)) {
-                $userPost = $post->getIdUser();
-
-                // Récupérer l'interaction de l'utilisateur avec ce post
-                $interaction = $interactionRepository->findOneBy([
-                    'user' => $user,
-                    'post' => $post
-                ]);
-
-                // Compter le nombre total de likes pour ce post
-                $totalLikes = $interactionRepository->count(['post' => $post, 'liked' => true]);
-
-                $posts[] = [
-                    'id' => $post->getId(),
-                    'content' => $post->isCensored() ? 'Ce message enfreint les conditions d\'utilisation de la plateforme' : $post->getContent(),
-                    'mediaUrl' => $post->getMediaUrl(),
-                    'created_at' => $post->getCreatedAt()->format('Y-m-d H:i:s'),
-                    'likes' => $post->isCensored() ? 0 : $totalLikes,
-                    'isLiked' => $interaction ? $interaction->isLiked() : false,
-                    'isCensored' => $post->isCensored(),
-                    'isPinned' => $post->isPinned(),
-                    'user' => $userPost ? [
-                        'id' => $userPost->getId(),
-                        'email' => $userPost->getEmail(),
-                        'name' => $userPost->getName(),
-                        'mention' => $userPost->getMention(),
-                        'avatar' => $userPost->getAvatar(),
-                        'isbanned' => $userPost->isbanned(),
-                        'readOnly' => $userPost->isReadOnly()
-                    ] : null
-                ];
-            }
-            $count++;
+        // Formater les données
+        $formattedPosts = [];
+        foreach ($posts as $post) {
+            $formattedPosts[] = $this->formatPostForResponse($post, $user, $interactionRepository);
         }
 
+        // Déterminer les liens de pagination
+        $previousPage = $page > 1 ? $page - 1 : null;
+        $nextPage = count($posts) == $limit ? $page + 1 : null;
+
+        // Construire la réponse paginée
         return $this->json([
-            'posts' => $posts,
+            'posts' => $formattedPosts,
             'previous_page' => $previousPage,
             'next_page' => $nextPage
         ]);
@@ -296,46 +270,14 @@ class PostController extends AbstractController
         PostRepository $postRepository,
         PostInteractionRepository $interactionRepository,
         #[CurrentUser] $user
-    ): Response {
-        $posts = [];
-        $userPosts = $postRepository->findByUserOrderByPinned($id);
+    ): JsonResponse {
+        $post = $postRepository->find($id);
 
-        foreach ($userPosts as $post) {
-            $userPost = $post->getIdUser();
-
-            // Récupérer l'interaction de l'utilisateur avec ce post
-            $interaction = $interactionRepository->findOneBy([
-                'user' => $user,
-                'post' => $post
-            ]);
-
-            // Compter le nombre total de likes pour ce post
-            $totalLikes = $interactionRepository->count(['post' => $post, 'liked' => true]);
-
-            $posts[] = [
-                'id' => $post->getId(),
-                'content' => $post->isCensored() ? 'Ce message enfreint les conditions d\'utilisation de la plateforme' : $post->getContent(),
-                'mediaUrl' => $post->getMediaUrl(),
-                'created_at' => $post->getCreatedAt()->format('Y-m-d H:i:s'),
-                'likes' => $post->isCensored() ? 0 : $totalLikes,
-                'isLiked' => $interaction ? $interaction->isLiked() : false,
-                'isCensored' => $post->isCensored(),
-                'isPinned' => $post->isPinned(),
-                'user' => $userPost ? [
-                    'id' => $userPost->getId(),
-                    'email' => $userPost->getEmail(),
-                    'name' => $userPost->getName(),
-                    'mention' => $userPost->getMention(),
-                    'avatar' => $userPost->getAvatar(),
-                    'isbanned' => $userPost->isbanned(),
-                    'readOnly' => $userPost->isReadOnly()
-                ] : null
-            ];
+        if (!$post) {
+            return $this->json(['message' => 'Post non trouvé'], Response::HTTP_NOT_FOUND);
         }
 
-        return $this->json([
-            'posts' => $posts
-        ]);
+        return $this->json($this->formatPostForResponse($post, $user, $interactionRepository));
     }
 
     #[Route('/post/{id}', name: 'post.get_single', methods: ['GET'])]
@@ -375,6 +317,8 @@ class PostController extends AbstractController
             'isLiked' => $interaction ? $interaction->isLiked() : false,
             'isCensored' => $post->isCensored(),
             'isPinned' => $post->isPinned(),
+            'isRetweet' => $post->isRetweet(),
+            'retweetCount' => $post->getRetweetCount(),
             'user' => $userPost ? [
                 'id' => $userPost->getId(),
                 'email' => $userPost->getEmail(),
@@ -386,17 +330,46 @@ class PostController extends AbstractController
             ] : null
         ];
 
+        // Ajouter les informations sur le post original et l'utilisateur qui a retweeté
+        if ($post->isRetweet()) {
+            $originalPost = $post->getOriginalPost();
+            $retweetedBy = $post->getRetweetedBy();
+
+            if ($originalPost) {
+                $postData['originalPost'] = [
+                    'id' => $originalPost->getId(),
+                    'content' => $originalPost->getContent(),
+                    'mediaUrl' => $originalPost->getMediaUrl(),
+                    'created_at' => $originalPost->getCreatedAt()->format('Y-m-d H:i:s'),
+                    'user' => $originalPost->getIdUser() ? [
+                        'id' => $originalPost->getIdUser()->getId(),
+                        'name' => $originalPost->getIdUser()->getName(),
+                        'mention' => $originalPost->getIdUser()->getMention(),
+                        'avatar' => $originalPost->getIdUser()->getAvatar()
+                    ] : null
+                ];
+            }
+
+            if ($retweetedBy) {
+                $postData['retweetedBy'] = [
+                    'id' => $retweetedBy->getId(),
+                    'name' => $retweetedBy->getName(),
+                    'mention' => $retweetedBy->getMention()
+                ];
+            }
+        }
+
         return $this->json($postData);
     }
 
     #[Route('/posts/{id}', name: 'posts.delete', methods: ['DELETE'])]
     #[IsGranted('ROLE_USER')]
-    public function delete(
+    public function deletePost(
         int $id,
         PostRepository $postRepository,
         PostInteractionRepository $interactionRepository,
         EntityManagerInterface $entityManager,
-        #[CurrentUser] $user
+        #[CurrentUser] User $user
     ): JsonResponse {
         $post = $postRepository->find($id);
 
@@ -404,9 +377,16 @@ class PostController extends AbstractController
             return $this->json(['message' => 'Post non trouvé'], Response::HTTP_NOT_FOUND);
         }
 
-        // Vérifier si l'utilisateur est le propriétaire du post
-        if ($post->getIdUser()->getId() !== $user->getId()) {
+        // Vérifier que l'utilisateur est bien l'auteur du post ou un admin
+        if ($post->getIdUser()->getId() !== $user->getId() && !in_array('ROLE_ADMIN', $user->getRoles())) {
             return $this->json(['message' => 'Vous n\'êtes pas autorisé à supprimer ce post'], Response::HTTP_FORBIDDEN);
+        }
+
+        // Si c'est un retweet, décrémenter le compteur du post original
+        if ($post->isRetweet() && $post->getOriginalPost()) {
+            $originalPost = $post->getOriginalPost();
+            $originalPost->decrementRetweetCount();
+            $entityManager->persist($originalPost);
         }
 
         // Supprimer d'abord toutes les interactions associées au post
@@ -551,5 +531,224 @@ class PostController extends AbstractController
             'isPinned' => $post->isPinned(),
             'message' => $post->isPinned() ? 'Post épinglé avec succès' : 'Post désépinglé avec succès'
         ]);
+    }
+
+    #[Route('/posts/{id}/retweet', name: 'posts.retweet', methods: ['POST'])]
+    #[IsGranted('ROLE_USER')]
+    public function retweet(
+        int $id,
+        Request $request,
+        PostRepository $postRepository,
+        EntityManagerInterface $entityManager,
+        #[CurrentUser] User $currentUser
+    ): JsonResponse {
+        // Récupérer le post original
+        $originalPost = $postRepository->find($id);
+        if (!$originalPost) {
+            return $this->json(['message' => 'Post non trouvé'], Response::HTTP_NOT_FOUND);
+        }
+
+        // Vérifier si l'utilisateur est banni
+        if ($currentUser->isbanned()) {
+            return $this->json(['message' => 'Votre compte est suspendu'], Response::HTTP_FORBIDDEN);
+        }
+
+        // Vérifier si l'utilisateur essaie de retweeter son propre tweet
+        if ($originalPost->getIdUser()->getId() === $currentUser->getId()) {
+            return $this->json(['message' => 'Vous ne pouvez pas repartager votre propre post'], Response::HTTP_BAD_REQUEST);
+        }
+
+        // Vérifier s'il existe déjà un retweet du même post par cet utilisateur
+        $existingRetweet = $postRepository->findOneBy([
+            'retweetedBy' => $currentUser,
+            'originalPost' => $originalPost
+        ]);
+
+        if ($existingRetweet) {
+            return $this->json(['message' => 'Vous avez déjà repartagé ce post'], Response::HTTP_BAD_REQUEST);
+        }
+
+        // Traiter les données
+        $data = json_decode($request->getContent(), true);
+        $content = $data['content'] ?? '';
+
+        // Créer le nouveau post (retweet)
+        $retweet = new Post();
+        $retweet->setContent($content);
+        $retweet->setOriginalPost($originalPost);
+        $retweet->setRetweetedBy($currentUser);
+        $retweet->setIdUser($currentUser); // L'utilisateur qui retweet devient le propriétaire
+        $retweet->setCreatedAt(new \DateTimeImmutable());
+
+        // Copier le mediaUrl si présent
+        if ($originalPost->getMediaUrl()) {
+            $retweet->setMediaUrl($originalPost->getMediaUrl());
+        }
+
+        // Incrémenter le compteur de retweets du post original
+        $originalPost->incrementRetweetCount();
+
+        // Persister les changements
+        $entityManager->persist($retweet);
+        $entityManager->flush();
+
+        return $this->json([
+            'id' => $retweet->getId(),
+            'content' => $retweet->getContent(),
+            'created_at' => $retweet->getCreatedAt()->format('Y-m-d H:i:s'),
+            'mediaUrl' => $retweet->getMediaUrl(),
+            'likes' => 0,
+            'isLiked' => false,
+            'retweets' => 0,
+            'isRetweet' => true,
+            'originalPost' => [
+                'id' => $originalPost->getId(),
+                'content' => $originalPost->getContent(),
+                'mediaUrl' => $originalPost->getMediaUrl(),
+                'created_at' => $originalPost->getCreatedAt()->format('Y-m-d H:i:s')
+            ],
+            'retweetedBy' => [
+                'id' => $currentUser->getId(),
+                'name' => $currentUser->getName(),
+                'mention' => $currentUser->getMention()
+            ],
+            'user' => [
+                'id' => $currentUser->getId(),
+                'name' => $currentUser->getName(),
+                'mention' => $currentUser->getMention(),
+                'avatar' => $currentUser->getAvatar(),
+                'isbanned' => $currentUser->isbanned(),
+                'readOnly' => $currentUser->isReadOnly()
+            ]
+        ]);
+    }
+
+    #[Route('/posts/{id}/retweet-status', name: 'posts.retweet_status', methods: ['GET'])]
+    #[IsGranted('ROLE_USER')]
+    public function getRetweetStatus(
+        int $id,
+        PostRepository $postRepository,
+        #[CurrentUser] User $currentUser
+    ): JsonResponse {
+        $post = $postRepository->find($id);
+
+        if (!$post) {
+            return $this->json(['message' => 'Post non trouvé'], Response::HTTP_NOT_FOUND);
+        }
+
+        // Vérifier si l'utilisateur a retweeté ce post
+        $hasRetweeted = $postRepository->findOneBy([
+            'retweetedBy' => $currentUser,
+            'originalPost' => $post
+        ]) !== null;
+
+        return $this->json([
+            'retweets' => $post->getRetweetCount(),
+            'isRetweeted' => $hasRetweeted
+        ]);
+    }
+
+    // Modifier la méthode fetchPosts pour inclure les informations de retweet
+    private function formatPostForResponse(Post $post, User $currentUser = null, PostInteractionRepository $interactionRepository = null): array
+    {
+        $postData = [
+            'id' => $post->getId(),
+            'content' => $post->getContent(),
+            'created_at' => $post->getCreatedAt()->format('Y-m-d H:i:s'),
+            'mediaUrl' => $post->getMediaUrl(),
+            'isCensored' => $post->isCensored(),
+            'isPinned' => $post->isPinned(),
+            'retweets' => $post->getRetweetCount(),
+            'isRetweet' => $post->isRetweet()
+        ];
+
+        // Ajouter les informations sur le post original et l'utilisateur qui a retweeté
+        if ($post->isRetweet()) {
+            $originalPost = $post->getOriginalPost();
+            $retweetedBy = $post->getRetweetedBy();
+
+            if ($originalPost) {
+                $postData['originalPost'] = [
+                    'id' => $originalPost->getId(),
+                    'content' => $originalPost->getContent(),
+                    'mediaUrl' => $originalPost->getMediaUrl(),
+                    'created_at' => $originalPost->getCreatedAt()->format('Y-m-d H:i:s')
+                ];
+            }
+
+            if ($retweetedBy) {
+                $postData['retweetedBy'] = [
+                    'id' => $retweetedBy->getId(),
+                    'name' => $retweetedBy->getName(),
+                    'mention' => $retweetedBy->getMention()
+                ];
+            }
+        }
+
+        // Ajouter les informations de l'utilisateur
+        $user = $post->getIdUser();
+        if ($user) {
+            $postData['user'] = [
+                'id' => $user->getId(),
+                'email' => $user->getEmail(),
+                'name' => $user->getName(),
+                'mention' => $user->getMention(),
+                'avatar' => $user->getAvatar(),
+                'isbanned' => $user->isbanned(),
+                'readOnly' => $user->isReadOnly()
+            ];
+        } else {
+            $postData['user'] = null;
+        }
+
+        // Ajouter les likes et le statut si l'utilisateur est connecté et le repository est fourni
+        if ($currentUser && $interactionRepository) {
+            $totalLikes = $interactionRepository->count(['post' => $post, 'liked' => true]);
+            $postData['likes'] = $totalLikes;
+
+            $interaction = $interactionRepository->findOneBy([
+                'user' => $currentUser,
+                'post' => $post
+            ]);
+            $postData['isLiked'] = $interaction && $interaction->isLiked();
+        } else {
+            $postData['likes'] = 0;
+            $postData['isLiked'] = false;
+        }
+
+        return $postData;
+    }
+
+    #[Route('/users/posts', name: 'posts.user', methods: ['GET'])]
+    #[IsGranted('ROLE_USER')]
+    public function getUserPosts(
+        Request $request,
+        PostRepository $postRepository,
+        PostInteractionRepository $interactionRepository,
+        EntityManagerInterface $entityManager,
+        #[CurrentUser] User $user
+    ): JsonResponse {
+        $userId = $request->query->getInt('userId', $user->getId());
+        $targetUser = $entityManager->getRepository(User::class)->find($userId);
+
+        if (!$targetUser) {
+            return $this->json(['message' => 'Utilisateur non trouvé'], Response::HTTP_NOT_FOUND);
+        }
+
+        // Utiliser findByUserOrderByPinned qui inclut les retweets
+        $posts = $postRepository->findByUserOrderByPinned($targetUser->getId());
+
+        // Filtrer les posts pour n'inclure que les posts originaux et les retweets faits par l'utilisateur du profil
+        $filteredPosts = array_filter($posts, function ($post) use ($targetUser) {
+            // Inclure si ce n'est pas un retweet OU si c'est un retweet fait par l'utilisateur du profil
+            return !$post->isRetweet() || ($post->isRetweet() && $post->getRetweetedBy() && $post->getRetweetedBy()->getId() === $targetUser->getId());
+        });
+
+        $formattedPosts = [];
+        foreach ($filteredPosts as $post) {
+            $formattedPosts[] = $this->formatPostForResponse($post, $user, $interactionRepository);
+        }
+
+        return $this->json(['posts' => $formattedPosts]);
     }
 }

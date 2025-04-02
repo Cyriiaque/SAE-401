@@ -270,9 +270,21 @@ export default function Profile() {
             }
         };
 
+        const handleRetweetCreated = (event: CustomEvent<Tweet>) => {
+            const newRetweet = event.detail;
+            // Si l'utilisateur actuel est celui qui a retweeté
+            if (newRetweet.retweetedBy?.id === user?.id) {
+                setRegularPosts(prevPosts => [newRetweet, ...prevPosts]);
+                setPosts(prevPosts => [newRetweet, ...prevPosts]);
+            }
+        };
+
         window.addEventListener('tweetPublished', handleTweetPublished as EventListener);
+        window.addEventListener('retweetCreated', handleRetweetCreated as EventListener);
+
         return () => {
             window.removeEventListener('tweetPublished', handleTweetPublished as EventListener);
+            window.removeEventListener('retweetCreated', handleRetweetCreated as EventListener);
         };
     }, [user?.id]);
 

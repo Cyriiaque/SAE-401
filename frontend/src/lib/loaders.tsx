@@ -52,6 +52,26 @@ export interface Tweet {
     isLiked: boolean;
     isCensored?: boolean;
     isPinned?: boolean;
+    retweets?: number; // Nombre de retweets
+    isRetweet?: boolean; // Si c'est un retweet
+    originalTweet?: Tweet; // Le tweet original si c'est un retweet
+    originalPost?: { // Le post original retourné par l'API
+        id: number;
+        content: string;
+        mediaUrl?: string | null;
+        created_at: string;
+        user?: {
+            id: number;
+            name: string;
+            mention: string;
+            avatar: string | null;
+        };
+    };
+    retweetedBy?: {
+        id: number;
+        name: string;
+        mention: string;
+    }; // L'utilisateur qui a retweeté
     user: {
         id: number;
         email: string;
@@ -327,7 +347,7 @@ export async function fetchUserPosts(userId: number): Promise<{ posts: Tweet[] }
         throw new Error('Non authentifié');
     }
 
-    const response = await fetch(`${API_BASE_URL}/posts/${userId}`, {
+    const response = await fetch(`${API_BASE_URL}/users/posts?userId=${userId}`, {
         headers: {
             'Authorization': `Bearer ${token}`
         }
@@ -361,10 +381,14 @@ export async function deletePost(postId: number): Promise<void> {
 
         // Si on ne peut pas récupérer les infos du post, on continue quand même avec la suppression
         let mediaUrls: string[] = [];
+        let isRetweet: boolean = false;
 
         if (postInfoResponse.ok) {
             const postData = await postInfoResponse.json();
             console.log("Données récupérées pour le post à supprimer:", postData);
+
+            // Vérifier si le post est un retweet
+            isRetweet = postData.isRetweet || !!postData.retweetedBy;
 
             // La nouvelle API renvoie directement l'objet post
             if (postData && postData.mediaUrl) {
@@ -405,8 +429,8 @@ export async function deletePost(postId: number): Promise<void> {
 
         console.log(`Post ${postId} supprimé avec succès`);
 
-        // Étape 3: Nettoyer les fichiers médias du post
-        if (mediaUrls.length > 0) {
+        // Étape 3: Nettoyer les fichiers médias du post SEULEMENT si ce n'est pas un retweet
+        if (mediaUrls.length > 0 && !isRetweet) {
             console.log(`Suppression des ${mediaUrls.length} fichiers médias associés au post ${postId}...`);
 
             // Pour chaque média, extraire seulement le nom du fichier (sans le chemin)
@@ -435,7 +459,11 @@ export async function deletePost(postId: number): Promise<void> {
                 console.error(`Certains fichiers du post ${postId} n'ont pas pu être supprimés:`, e);
             }
         } else {
-            console.log(`Le post ${postId} ne contenait pas de médias à supprimer`);
+            if (isRetweet) {
+                console.log(`Le post ${postId} est un retweet, les médias ne seront pas supprimés`);
+            } else {
+                console.log(`Le post ${postId} ne contenait pas de médias à supprimer`);
+            }
         }
     } catch (error) {
         console.error(`Erreur lors de la suppression du post ${postId}:`, error);
@@ -1042,4 +1070,65 @@ export async function fetchUsersByQuery(query: string): Promise<User[]> {
         console.error("Erreur lors de la recherche d'utilisateurs:", error);
         throw new Error("Erreur lors de la recherche des utilisateurs");
     }
+}
+
+// Nouvelle fonction pour créer un retweet
+export async function retweetPost(postId: number, comment?: string): Promise<Tweet> {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        logout();
+        throw new Error('Non authentifié');
+    }
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/posts/${postId}/retweet`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+                content: comment || '' // Si pas de commentaire, envoyer une chaîne vide
+            })
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+
+            if (response.status === 401) {
+                logout();
+                throw new Error('Session expirée - veuillez vous reconnecter');
+            }
+
+            throw new Error(error.errors || error.message || 'Erreur lors du retweet');
+        }
+
+        return await response.json();
+    } catch (error) {
+        throw error;
+    }
+}
+
+// Fonction pour vérifier si un post a été retweeté par l'utilisateur
+export async function getRetweetStatus(postId: number): Promise<{ retweets: number, isRetweeted: boolean }> {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('Non authentifié');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/posts/${postId}/retweet-status`, {
+        headers: {
+            'Authorization': `Bearer ${token}`
+        }
+    });
+
+    if (!response.ok) {
+        if (response.status === 401) {
+            logout();
+            throw new Error('Session expirée');
+        }
+        throw new Error('Erreur lors de la vérification du statut de retweet');
+    }
+
+    return response.json();
 }

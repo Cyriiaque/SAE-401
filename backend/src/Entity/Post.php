@@ -32,6 +32,17 @@ class Post
     #[ORM\Column(type: 'boolean', options: ['default' => false])]
     private ?bool $isPinned = false;
 
+    #[ORM\ManyToOne(targetEntity: self::class)]
+    #[ORM\JoinColumn(nullable: true)]
+    private ?self $originalPost = null;
+
+    #[ORM\Column(type: 'integer', options: ['default' => 0])]
+    private ?int $retweetCount = 0;
+
+    #[ORM\ManyToOne(targetEntity: User::class)]
+    #[ORM\JoinColumn(nullable: true)]
+    private ?User $retweetedBy = null;
+
     public function getId(): ?int
     {
         return $this->id;
@@ -111,5 +122,57 @@ class Post
     {
         $this->isPinned = $isPinned;
         return $this;
+    }
+
+    public function getOriginalPost(): ?self
+    {
+        return $this->originalPost;
+    }
+
+    public function setOriginalPost(?self $originalPost): static
+    {
+        $this->originalPost = $originalPost;
+        return $this;
+    }
+
+    public function getRetweetCount(): ?int
+    {
+        return $this->retweetCount;
+    }
+
+    public function setRetweetCount(int $retweetCount): static
+    {
+        $this->retweetCount = $retweetCount;
+        return $this;
+    }
+
+    public function incrementRetweetCount(): static
+    {
+        $this->retweetCount++;
+        return $this;
+    }
+
+    public function decrementRetweetCount(): static
+    {
+        if ($this->retweetCount > 0) {
+            $this->retweetCount--;
+        }
+        return $this;
+    }
+
+    public function getRetweetedBy(): ?User
+    {
+        return $this->retweetedBy;
+    }
+
+    public function setRetweetedBy(?User $retweetedBy): static
+    {
+        $this->retweetedBy = $retweetedBy;
+        return $this;
+    }
+
+    public function isRetweet(): bool
+    {
+        return $this->originalPost !== null;
     }
 }
