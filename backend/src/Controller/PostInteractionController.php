@@ -141,6 +141,12 @@ class PostInteractionController extends AbstractController
             return $this->json(['message' => 'Vous ne pouvez pas interagir avec ce post'], Response::HTTP_FORBIDDEN);
         }
 
+        // Vérifier si l'auteur du post est en mode lecture seule
+        $postAuthor = $post->getIdUser();
+        if ($postAuthor && $postAuthor->isReadOnly()) {
+            return $this->json(['message' => 'Ce compte est en mode lecture seule. Les réponses sont désactivées.'], Response::HTTP_FORBIDDEN);
+        }
+
         // Vérifier si l'utilisateur a déjà une interaction avec ce post
         $interaction = $interactionRepository->findOneBy([
             'user' => $user,
@@ -178,7 +184,9 @@ class PostInteractionController extends AbstractController
                 'id' => $user->getId(),
                 'name' => $user->getName(),
                 'mention' => $user->getMention(),
-                'avatar' => $user->getAvatar()
+                'avatar' => $user->getAvatar(),
+                'isbanned' => $user->isbanned(),
+                'readOnly' => $user->isReadOnly()
             ],
             'isLiked' => $interaction->isLiked()
         ]);
@@ -216,7 +224,8 @@ class PostInteractionController extends AbstractController
                         'name' => $interactionUser->getName(),
                         'mention' => $interactionUser->getMention(),
                         'avatar' => $interactionUser->getAvatar(),
-                        'isbanned' => $interactionUser->isbanned()
+                        'isbanned' => $interactionUser->isbanned(),
+                        'readOnly' => $interactionUser->isReadOnly()
                     ],
                     'isLiked' => $interaction->isLiked()
                 ];

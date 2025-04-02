@@ -67,6 +67,9 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     #[ORM\Column(type: 'boolean', options: ['default' => false])]
     private ?bool $isbanned = false;
 
+    #[ORM\Column(type: 'boolean', options: ['default' => false])]
+    private ?bool $read_only = false;
+
     public function getId(): ?int
     {
         return $this->id;
@@ -246,6 +249,18 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     public function setIsbanned(bool $isbanned): static
     {
         $this->isbanned = $isbanned;
+
+        return $this;
+    }
+
+    public function isReadOnly(): ?bool
+    {
+        return $this->read_only;
+    }
+
+    public function setReadOnly(bool $read_only): static
+    {
+        $this->read_only = $read_only;
 
         return $this;
     }

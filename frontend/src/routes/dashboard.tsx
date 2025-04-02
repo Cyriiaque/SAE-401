@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { User, fetchUsers, updateUser, banUser, getImageUrl, fetchAllPosts, Tweet, togglePostCensorship } from '../lib/loaders';
+import { useEffect, useState, useRef, useCallback } from 'react';
+import { User, fetchUsers, updateUser, banUser, getImageUrl, fetchAllPosts, Tweet, togglePostCensorship, searchPosts } from '../lib/loaders';
 import { useNavigate } from 'react-router-dom';
 import Button from '../ui/buttons';
 import { useAuth } from '../contexts/AuthContext';
@@ -23,12 +23,21 @@ export default function Dashboard() {
     const [confirmCensorshipModalOpen, setConfirmCensorshipModalOpen] = useState(false);
     const [postToCensor, setPostToCensor] = useState<Tweet | null>(null);
     const [page, setPage] = useState(1);
+    const [hasMore, setHasMore] = useState(true);
+    const [loadingMore, setLoadingMore] = useState(false);
+    const observer = useRef<IntersectionObserver | null>(null);
+    const lastPostElementRef = useRef<HTMLDivElement | null>(null);
+    const [searchQuery, setSearchQuery] = useState<string>('');
+    const [isSearching, setIsSearching] = useState<boolean>(false);
+    const [searchMode, setSearchMode] = useState<boolean>(false);
 
     useEffect(() => {
         if (activeTab === 'users') {
             loadUsers();
         } else if (activeTab === 'content') {
-            loadPosts();
+            if (!searchMode || searchQuery.trim() === '') {
+                loadPosts();
+            }
         }
     }, [activeTab]);
 
@@ -45,12 +54,23 @@ export default function Dashboard() {
         }
     };
 
-    const loadPosts = async () => {
-        setLoadingPosts(true);
+    const loadPosts = async (pageNum: number = 1, append: boolean = false) => {
+        if (pageNum === 1) {
+            setLoadingPosts(true);
+        } else {
+            setLoadingMore(true);
+        }
         setError(null);
+        setSearchMode(false);
         try {
-            const data = await fetchAllPosts(page);
-            setPosts(data.posts);
+            const data = await fetchAllPosts(pageNum);
+            if (append) {
+                setPosts(prev => [...prev, ...data.posts]);
+            } else {
+                setPosts(data.posts);
+            }
+            setHasMore(data.next_page !== null);
+            setPage(pageNum);
         } catch (err) {
             console.error('Erreur détaillée:', err);
             if (err instanceof Error) {
@@ -60,8 +80,80 @@ export default function Dashboard() {
             }
         } finally {
             setLoadingPosts(false);
+            setLoadingMore(false);
         }
     };
+
+    const handleSearch = async () => {
+        if (searchQuery.trim() === '') {
+            loadPosts();
+            return;
+        }
+
+        setIsSearching(true);
+        setError(null);
+        try {
+            const data = await searchPosts(searchQuery);
+            setPosts(data.posts);
+            setSearchMode(true);
+            setHasMore(false);
+        } catch (err) {
+            console.error('Erreur lors de la recherche:', err);
+            if (err instanceof Error) {
+                setError(`Erreur lors de la recherche: ${err.message}`);
+            } else {
+                setError('Erreur inconnue lors de la recherche');
+            }
+        } finally {
+            setIsSearching(false);
+        }
+    };
+
+    const handleSearchInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setSearchQuery(e.target.value);
+        if (e.target.value.trim() === '') {
+            loadPosts();
+        }
+    };
+
+    const handleSearchSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        handleSearch();
+    };
+
+    const handleClearSearch = () => {
+        setSearchQuery('');
+        loadPosts();
+    };
+
+    const loadMorePosts = useCallback(() => {
+        if (!loadingMore && hasMore && !searchMode) {
+            const nextPage = page + 1;
+            loadPosts(nextPage, true);
+        }
+    }, [loadingMore, hasMore, page, searchMode]);
+
+    useEffect(() => {
+        if (observer.current) {
+            observer.current.disconnect();
+        }
+
+        observer.current = new IntersectionObserver(entries => {
+            if (entries[0].isIntersecting && hasMore && !loadingMore && !searchMode) {
+                loadMorePosts();
+            }
+        });
+
+        if (lastPostElementRef.current) {
+            observer.current.observe(lastPostElementRef.current);
+        }
+
+        return () => {
+            if (observer.current) {
+                observer.current.disconnect();
+            }
+        };
+    }, [loadMorePosts, hasMore, loadingMore, posts, searchMode]);
 
     if (!user?.roles?.includes('ROLE_ADMIN')) {
         navigate('/');
@@ -92,7 +184,6 @@ export default function Dashboard() {
     const handleBanUser = async (userToBan: User) => {
         try {
             await banUser(userToBan.id);
-            // Mettre à jour la liste des utilisateurs après le bannissement
             const updatedUsers = users.map(user =>
                 user.id === userToBan.id ? { ...user, isbanned: !user.isbanned } : user
             );
@@ -110,7 +201,6 @@ export default function Dashboard() {
     const handleCensorPost = async (post: Tweet) => {
         try {
             const result = await togglePostCensorship(post.id);
-            // Mettre à jour la liste des posts après la censure
             const updatedPosts = posts.map(p =>
                 p.id === post.id ? { ...p, isCensored: result.isCensored } : p
             );
@@ -296,25 +386,101 @@ export default function Dashboard() {
                     ) : (
                         // Onglet "Gestion des Contenus"
                         <>
-                            {loadingPosts ? (
+                            {/* Barre de recherche pour les posts */}
+                            <div className="mt-4 mb-4">
+                                <form onSubmit={handleSearchSubmit} className="flex gap-2">
+                                    <div className="relative flex-1">
+                                        <input
+                                            type="text"
+                                            value={searchQuery}
+                                            onChange={handleSearchInputChange}
+                                            placeholder="Rechercher dans les posts..."
+                                            className="w-full p-2 pl-4 pr-10 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-orange focus:border-transparent"
+                                            disabled={isSearching}
+                                        />
+                                        {searchQuery && (
+                                            <button
+                                                type="button"
+                                                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                                                onClick={handleClearSearch}
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                                </svg>
+                                            </button>
+                                        )}
+                                    </div>
+                                    <Button
+                                        variant="full"
+                                        type="submit"
+                                        className="px-4 py-2"
+                                        disabled={isSearching}
+                                    >
+                                        {isSearching ? (
+                                            <div className="flex items-center">
+                                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                                                Recherche...
+                                            </div>
+                                        ) : (
+                                            <div className="flex items-center">
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                                </svg>
+                                                Rechercher
+                                            </div>
+                                        )}
+                                    </Button>
+                                </form>
+                            </div>
+
+                            {/* État de la recherche */}
+                            {searchMode && (
+                                <div className="flex items-center justify-between bg-gray-100 p-2 rounded-lg mb-4">
+                                    <div className="flex items-center">
+                                        <span className="text-gray-600 mr-2">Résultats pour: </span>
+                                        <span className="font-medium">{searchQuery}</span>
+                                    </div>
+                                    <button
+                                        onClick={handleClearSearch}
+                                        className="text-orange hover:text-orange-600 font-medium flex items-center"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1 text-orange" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                        </svg>
+                                        Effacer et afficher tout
+                                    </button>
+                                </div>
+                            )}
+
+                            {loadingPosts && posts.length === 0 ? (
                                 <div className="flex justify-center items-center h-64">
                                     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange"></div>
                                 </div>
                             ) : error ? (
                                 <div className="text-center text-red-500 p-4">{error}</div>
                             ) : (
-                                <div className="mt-8">
+                                <div className="mt-2">
                                     <div className="bg-white rounded-lg overflow-hidden">
-                                        <h3 className="text-lg font-semibold mb-4 pl-4">Liste des posts</h3>
+                                        <h3 className="text-lg font-semibold mb-4 pl-4">
+                                            {searchMode
+                                                ? `${posts.length} post(s) trouvé(s)`
+                                                : 'Liste des posts'}
+                                        </h3>
 
                                         {posts.length === 0 ? (
                                             <div className="text-center text-gray-500 py-8">
-                                                Aucun post disponible
+                                                {searchMode
+                                                    ? 'Aucun post ne correspond à votre recherche'
+                                                    : 'Aucun post disponible'}
                                             </div>
                                         ) : (
                                             <div className="divide-y divide-gray-200">
-                                                {posts.map((post) => (
-                                                    <div key={post.id} className="relative mb-6">
+                                                {posts.map((post, index) => (
+                                                    <div
+                                                        key={post.id}
+                                                        className="relative mb-6"
+                                                        ref={index === posts.length - 1 ? lastPostElementRef : null}
+                                                    >
                                                         {/* Bouton de censure - version desktop */}
                                                         <div className="absolute right-4 top-4 z-10 hidden sm:block">
                                                             <Button
@@ -376,6 +542,28 @@ export default function Dashboard() {
                                                         />
                                                     </div>
                                                 ))}
+                                            </div>
+                                        )}
+
+                                        {/* Indicateur de chargement pour la pagination infinie */}
+                                        {loadingMore && (
+                                            <div className="flex justify-center py-4">
+                                                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange"></div>
+                                                <span className="ml-2 text-gray-500">Chargement de plus de posts...</span>
+                                            </div>
+                                        )}
+
+                                        {/* Message si aucun post n'est disponible */}
+                                        {!loadingMore && posts.length === 0 && (
+                                            <div className="text-center text-gray-500 py-8">
+                                                Aucun post disponible
+                                            </div>
+                                        )}
+
+                                        {/* Message si tous les posts ont été chargés */}
+                                        {!loadingMore && posts.length > 0 && !hasMore && (
+                                            <div className="text-center text-gray-500 py-4">
+                                                Tous les posts ont été chargés
                                             </div>
                                         )}
                                     </div>

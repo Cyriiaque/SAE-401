@@ -16,6 +16,7 @@ export interface User {
     isVerified: boolean;
     postReload: number;
     isbanned: boolean;
+    readOnly?: boolean;
 }
 
 // Types pour l'authentification
@@ -57,6 +58,7 @@ export interface Tweet {
         mention: string;
         avatar: string | null;
         isbanned?: boolean;
+        readOnly?: boolean;
     } | null;
 }
 
@@ -482,26 +484,28 @@ export async function updatePost(postId: number, content: string, mediaUrls?: st
 }
 
 export async function updateUserSettings(data: Partial<User>): Promise<User> {
-    const token = localStorage.getItem('token');
-    if (!token) {
-        throw new Error('Non authentifié');
+    try {
+        // Mise à jour des paramètres utilisateur via le nouvel endpoint
+        const response = await fetch(`${API_BASE_URL}/user/settings`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${localStorage.getItem('token')}`
+            },
+            body: JSON.stringify(data)
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || 'Erreur lors de la mise à jour des paramètres');
+        }
+
+        const updatedUser = await response.json();
+        return updatedUser;
+    } catch (error) {
+        console.error('Erreur de mise à jour des paramètres utilisateur:', error);
+        throw error;
     }
-
-    const response = await fetch('http://localhost:8080/user/settings/post-reload', {
-        method: 'PUT',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(data)
-    });
-
-    if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Erreur lors de la mise à jour des paramètres');
-    }
-
-    return response.json();
 }
 
 export async function checkUserStatus(userId: number): Promise<User> {
@@ -943,7 +947,7 @@ export async function togglePostCensorship(postId: number): Promise<{ isCensored
     }
 }
 
-export async function fetchAllPosts(page: number = 1): Promise<{ posts: Tweet[] }> {
+export async function fetchAllPosts(page: number = 1): Promise<{ posts: Tweet[], previous_page: number | null, next_page: number | null }> {
     try {
         const token = localStorage.getItem('token');
         if (!token) {
@@ -964,10 +968,41 @@ export async function fetchAllPosts(page: number = 1): Promise<{ posts: Tweet[] 
 
         const data = await response.json();
         return {
-            posts: data.posts
+            posts: data.posts,
+            previous_page: data.previous_page,
+            next_page: data.next_page
         };
     } catch (error) {
         console.error('Erreur fetchAllPosts:', error);
+        throw error;
+    }
+}
+
+export async function searchPosts(searchQuery: string): Promise<{ posts: Tweet[] }> {
+    try {
+        const token = localStorage.getItem('token');
+        if (!token) {
+            throw new Error('Non authentifié');
+        }
+
+        const response = await fetch(`${API_BASE_URL}/posts/search?query=${encodeURIComponent(searchQuery)}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+            }
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || 'Erreur lors de la recherche des posts');
+        }
+
+        const data = await response.json();
+        return {
+            posts: data.posts
+        };
+    } catch (error) {
+        console.error('Erreur searchPosts:', error);
         throw error;
     }
 }

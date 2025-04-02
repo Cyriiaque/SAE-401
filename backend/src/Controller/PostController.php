@@ -23,6 +23,71 @@ use App\Entity\User;
 
 class PostController extends AbstractController
 {
+    #[Route('/posts/search', name: 'posts.search', methods: ['GET'])]
+    #[IsGranted('ROLE_ADMIN')]
+    public function searchPosts(
+        Request $request,
+        EntityManagerInterface $entityManager,
+        PostInteractionRepository $interactionRepository,
+        #[CurrentUser] $user
+    ): JsonResponse {
+        $query = $request->query->get('query', '');
+
+        if (empty($query)) {
+            return $this->json(['posts' => []]);
+        }
+
+        // Recherche dans les posts et leurs utilisateurs associés
+        $qb = $entityManager->createQueryBuilder();
+        $qb->select('p')
+            ->from(Post::class, 'p')
+            ->leftJoin('p.user', 'u')
+            ->where($qb->expr()->orX(
+                $qb->expr()->like('p.content', ':query'),
+                $qb->expr()->like('u.name', ':query'),
+                $qb->expr()->like('u.mention', ':query')
+            ))
+            ->setParameter('query', '%' . $query . '%')
+            ->orderBy('p.created_at', 'DESC');
+
+        $results = $qb->getQuery()->getResult();
+
+        $posts = [];
+        foreach ($results as $post) {
+            $userPost = $post->getIdUser();
+
+            // Récupérer l'interaction de l'utilisateur avec ce post
+            $interaction = $interactionRepository->findOneBy([
+                'user' => $user,
+                'post' => $post
+            ]);
+
+            // Compter le nombre total de likes pour ce post
+            $totalLikes = $interactionRepository->count(['post' => $post, 'liked' => true]);
+
+            $posts[] = [
+                'id' => $post->getId(),
+                'content' => $post->isCensored() ? 'Ce message enfreint les conditions d\'utilisation de la plateforme' : $post->getContent(),
+                'mediaUrl' => $post->getMediaUrl(),
+                'created_at' => $post->getCreatedAt()->format('Y-m-d H:i:s'),
+                'likes' => $post->isCensored() ? 0 : $totalLikes,
+                'isLiked' => $interaction ? $interaction->isLiked() : false,
+                'isCensored' => $post->isCensored(),
+                'user' => $userPost ? [
+                    'id' => $userPost->getId(),
+                    'email' => $userPost->getEmail(),
+                    'name' => $userPost->getName(),
+                    'mention' => $userPost->getMention(),
+                    'avatar' => $userPost->getAvatar(),
+                    'isbanned' => $userPost->isbanned(),
+                    'readOnly' => $userPost->isReadOnly()
+                ] : null
+            ];
+        }
+
+        return $this->json(['posts' => $posts]);
+    }
+
     #[Route('/posts', name: 'posts.index', methods: ['GET'])]
     public function index(
         Request $request,
@@ -71,7 +136,8 @@ class PostController extends AbstractController
                         'name' => $userPost->getName(),
                         'mention' => $userPost->getMention(),
                         'avatar' => $userPost->getAvatar(),
-                        'isbanned' => $userPost->isbanned()
+                        'isbanned' => $userPost->isbanned(),
+                        'readOnly' => $userPost->isReadOnly()
                     ] : null
                 ];
             }
@@ -163,7 +229,8 @@ class PostController extends AbstractController
                     'name' => $userPost->getName(),
                     'mention' => $userPost->getMention(),
                     'avatar' => $userPost->getAvatar(),
-                    'isbanned' => $userPost->isbanned()
+                    'isbanned' => $userPost->isbanned(),
+                    'readOnly' => $userPost->isReadOnly()
                 ] : null
             ];
         }
@@ -256,7 +323,9 @@ class PostController extends AbstractController
                         'email' => $userPost->getEmail(),
                         'name' => $userPost->getName(),
                         'mention' => $userPost->getMention(),
-                        'avatar' => $userPost->getAvatar()
+                        'avatar' => $userPost->getAvatar(),
+                        'isbanned' => $userPost->isbanned(),
+                        'readOnly' => $userPost->isReadOnly()
                     ] : null
                 ];
             }
@@ -308,7 +377,9 @@ class PostController extends AbstractController
                 'email' => $userPost->getEmail(),
                 'name' => $userPost->getName(),
                 'mention' => $userPost->getMention(),
-                'avatar' => $userPost->getAvatar()
+                'avatar' => $userPost->getAvatar(),
+                'isbanned' => $userPost->isbanned(),
+                'readOnly' => $userPost->isReadOnly()
             ] : null
         ];
 

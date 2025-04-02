@@ -106,6 +106,9 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
   // Nouvelle logique pour gérer les posts censurés
   const isCensored = currentTweet.isCensored ?? false;
 
+  // Vérifier si le tweet provient d'un compte en mode lecture seule
+  const isReadOnly = currentTweet.user?.readOnly ?? false;
+
   const mediaFiles = currentTweet.mediaUrl ? currentTweet.mediaUrl.split(',') : [];
   const displayedMediaFiles = mediaFiles.slice(0, 4);
   const hasMoreMedia = mediaFiles.length > 4;
@@ -246,6 +249,13 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
     // Si l'utilisateur est bloqué par l'auteur, empêcher l'interaction
     if (isBlockedByAuthor) {
       setErrorMessage("Vous ne pouvez pas répondre à ce post car l'auteur vous a bloqué.");
+      setTimeout(() => setErrorMessage(null), 3000);
+      return;
+    }
+
+    // Si le compte est en mode lecture seule, empêcher la réponse
+    if (isReadOnly) {
+      setErrorMessage("Ce compte est en mode lecture seule. Les réponses sont désactivées.");
       setTimeout(() => setErrorMessage(null), 3000);
       return;
     }
@@ -764,7 +774,7 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
           <div className="absolute left-10 top-0 w-[2px] h-full bg-gray-300"></div>
 
           {/* Si l'utilisateur n'a pas répondu et est connecté, on affiche le formulaire de réponse */}
-          {user && !userHasReplied && !isBlockedByAuthor && (
+          {user && !userHasReplied && !isBlockedByAuthor && !isReadOnly && (
             <div ref={replyFormRef} className="relative pt-2">
               {/* Barre horizontale */}
               <div className="absolute left-6.5 top-6 h-[2px] w-6 bg-gray-300"></div>
@@ -820,16 +830,21 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
           )}
 
           {/* Message si l'utilisateur est bloqué par l'auteur */}
-          {user && isBlockedByAuthor && (
-            <div className="relative">
-              <div className="ml-15 pl-5 text-sm text-red-600 italic border-b border-gray-300 pb-3">
-                Vous ne pouvez pas répondre à ce post car l'auteur vous a bloqué
-              </div>
+          {isBlockedByAuthor && (
+            <div className="p-4 my-2 bg-gray-100 rounded-lg text-center text-gray-600">
+              <p>Vous ne pouvez pas répondre à ce post car l'auteur vous a bloqué.</p>
+            </div>
+          )}
+
+          {/* Message si le compte est en mode lecture seule */}
+          {isReadOnly && (
+            <div className="p-4 my-2 bg-blue-50 rounded-lg text-center text-blue-600">
+              <p>Ce compte est en mode lecture seule. Les réponses sont désactivées.</p>
             </div>
           )}
 
           {/* Message si l'utilisateur a déjà répondu */}
-          {user && userHasReplied && !isBlockedByAuthor && (
+          {user && userHasReplied && !isBlockedByAuthor && !isReadOnly && (
             <div className="relative">
               <div className="ml-15 pl-5 text-sm text-gray-600 italic border-b border-gray-300 pb-3">
                 Vous avez déjà répondu à ce post
