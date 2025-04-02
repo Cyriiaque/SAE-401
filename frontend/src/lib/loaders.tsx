@@ -51,6 +51,7 @@ export interface Tweet {
     likes: number;
     isLiked: boolean;
     isCensored?: boolean;
+    isPinned?: boolean;
     user: {
         id: number;
         email: string;
@@ -918,33 +919,43 @@ export async function fetchBlockedUsers(): Promise<{ blockedUsers: User[] }> {
 }
 
 export async function togglePostCensorship(postId: number): Promise<{ isCensored: boolean }> {
-    try {
-        const token = localStorage.getItem('token');
-        if (!token) {
-            throw new Error('Non authentifié');
-        }
-
-        const response = await fetch(`${API_BASE_URL}/posts/${postId}/toggle-censorship`, {
-            method: 'PUT',
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json',
-            },
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.message || 'Erreur lors de la modification du statut de censure');
-        }
-
-        const data = await response.json();
-        return {
-            isCensored: data.isCensored
-        };
-    } catch (error) {
-        console.error('Erreur toggle censure:', error);
-        throw error;
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('Non authentifié');
     }
+
+    const response = await fetch(`${API_BASE_URL}/posts/${postId}/toggle-censorship`, {
+        method: 'PATCH',
+        headers: {
+            'Authorization': `Bearer ${token}`
+        }
+    });
+
+    if (!response.ok) {
+        throw new Error('Erreur lors de la modification du statut de censure');
+    }
+
+    return response.json();
+}
+
+export async function togglePinPost(postId: number): Promise<{ isPinned: boolean }> {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('Non authentifié');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/posts/${postId}/toggle-pin`, {
+        method: 'PATCH',
+        headers: {
+            'Authorization': `Bearer ${token}`
+        }
+    });
+
+    if (!response.ok) {
+        throw new Error('Erreur lors de l\'épinglage/désépinglage du post');
+    }
+
+    return response.json();
 }
 
 export async function fetchAllPosts(page: number = 1): Promise<{ posts: Tweet[], previous_page: number | null, next_page: number | null }> {

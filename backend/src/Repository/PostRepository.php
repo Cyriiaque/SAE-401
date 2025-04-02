@@ -28,6 +28,17 @@ class PostRepository extends ServiceEntityRepository
         return new Paginator($query);
     }
 
+    public function findByUserOrderByPinned(int $userId): array
+    {
+        return $this->createQueryBuilder('p')
+            ->where('p.user = :userId')
+            ->setParameter('userId', $userId)
+            ->orderBy('p.isPinned', 'DESC')
+            ->addOrderBy('p.created_at', 'DESC')
+            ->getQuery()
+            ->getResult();
+    }
+
     public function save(Post $post, bool $flush = false): void
     {
         $this->getEntityManager()->persist($post);

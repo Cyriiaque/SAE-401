@@ -73,6 +73,7 @@ class PostController extends AbstractController
                 'likes' => $post->isCensored() ? 0 : $totalLikes,
                 'isLiked' => $interaction ? $interaction->isLiked() : false,
                 'isCensored' => $post->isCensored(),
+                'isPinned' => $post->isPinned(),
                 'user' => $userPost ? [
                     'id' => $userPost->getId(),
                     'email' => $userPost->getEmail(),
@@ -130,6 +131,7 @@ class PostController extends AbstractController
                     'likes' => $post->isCensored() ? 0 : $totalLikes,
                     'isLiked' => $interaction ? $interaction->isLiked() : false,
                     'isCensored' => $post->isCensored(),
+                    'isPinned' => $post->isPinned(),
                     'user' => $userPost ? [
                         'id' => $userPost->getId(),
                         'email' => $userPost->getEmail(),
@@ -223,6 +225,7 @@ class PostController extends AbstractController
                 'likes' => $post->isCensored() ? 0 : $totalLikes,
                 'isLiked' => $interaction ? $interaction->isLiked() : false,
                 'isCensored' => $post->isCensored(),
+                'isPinned' => $post->isPinned(),
                 'user' => $userPost ? [
                     'id' => $userPost->getId(),
                     'email' => $userPost->getEmail(),
@@ -295,40 +298,39 @@ class PostController extends AbstractController
         #[CurrentUser] $user
     ): Response {
         $posts = [];
-        $paginator = $postRepository->paginateAllOrderedByLatest();
+        $userPosts = $postRepository->findByUserOrderByPinned($id);
 
-        foreach ($paginator as $post) {
-            if ($post->getIdUser()->getId() === $id) {
-                $userPost = $post->getIdUser();
+        foreach ($userPosts as $post) {
+            $userPost = $post->getIdUser();
 
-                // Récupérer l'interaction de l'utilisateur avec ce post
-                $interaction = $interactionRepository->findOneBy([
-                    'user' => $user,
-                    'post' => $post
-                ]);
+            // Récupérer l'interaction de l'utilisateur avec ce post
+            $interaction = $interactionRepository->findOneBy([
+                'user' => $user,
+                'post' => $post
+            ]);
 
-                // Compter le nombre total de likes pour ce post
-                $totalLikes = $interactionRepository->count(['post' => $post, 'liked' => true]);
+            // Compter le nombre total de likes pour ce post
+            $totalLikes = $interactionRepository->count(['post' => $post, 'liked' => true]);
 
-                $posts[] = [
-                    'id' => $post->getId(),
-                    'content' => $post->isCensored() ? 'Ce message enfreint les conditions d\'utilisation de la plateforme' : $post->getContent(),
-                    'mediaUrl' => $post->getMediaUrl(),
-                    'created_at' => $post->getCreatedAt()->format('Y-m-d H:i:s'),
-                    'likes' => $post->isCensored() ? 0 : $totalLikes,
-                    'isLiked' => $interaction ? $interaction->isLiked() : false,
-                    'isCensored' => $post->isCensored(),
-                    'user' => $userPost ? [
-                        'id' => $userPost->getId(),
-                        'email' => $userPost->getEmail(),
-                        'name' => $userPost->getName(),
-                        'mention' => $userPost->getMention(),
-                        'avatar' => $userPost->getAvatar(),
-                        'isbanned' => $userPost->isbanned(),
-                        'readOnly' => $userPost->isReadOnly()
-                    ] : null
-                ];
-            }
+            $posts[] = [
+                'id' => $post->getId(),
+                'content' => $post->isCensored() ? 'Ce message enfreint les conditions d\'utilisation de la plateforme' : $post->getContent(),
+                'mediaUrl' => $post->getMediaUrl(),
+                'created_at' => $post->getCreatedAt()->format('Y-m-d H:i:s'),
+                'likes' => $post->isCensored() ? 0 : $totalLikes,
+                'isLiked' => $interaction ? $interaction->isLiked() : false,
+                'isCensored' => $post->isCensored(),
+                'isPinned' => $post->isPinned(),
+                'user' => $userPost ? [
+                    'id' => $userPost->getId(),
+                    'email' => $userPost->getEmail(),
+                    'name' => $userPost->getName(),
+                    'mention' => $userPost->getMention(),
+                    'avatar' => $userPost->getAvatar(),
+                    'isbanned' => $userPost->isbanned(),
+                    'readOnly' => $userPost->isReadOnly()
+                ] : null
+            ];
         }
 
         return $this->json([
@@ -372,6 +374,7 @@ class PostController extends AbstractController
             'likes' => $post->isCensored() ? 0 : $totalLikes,
             'isLiked' => $interaction ? $interaction->isLiked() : false,
             'isCensored' => $post->isCensored(),
+            'isPinned' => $post->isPinned(),
             'user' => $userPost ? [
                 'id' => $userPost->getId(),
                 'email' => $userPost->getEmail(),
@@ -505,6 +508,48 @@ class PostController extends AbstractController
             'id' => $post->getId(),
             'isCensored' => $post->isCensored(),
             'message' => $post->isCensored() ? 'Post censuré avec succès' : 'Censure retirée avec succès'
+        ]);
+    }
+
+    #[Route('/posts/{id}/toggle-pin', name: 'posts.toggle_pin', methods: ['PATCH'])]
+    #[IsGranted('ROLE_USER')]
+    public function togglePin(
+        int $id,
+        PostRepository $postRepository,
+        EntityManagerInterface $entityManager,
+        #[CurrentUser] $user
+    ): JsonResponse {
+        $post = $postRepository->find($id);
+
+        if (!$post) {
+            return $this->json(['message' => 'Post non trouvé'], Response::HTTP_NOT_FOUND);
+        }
+
+        // Vérifier si l'utilisateur est le propriétaire du post
+        if ($post->getIdUser()->getId() !== $user->getId()) {
+            return $this->json(['message' => 'Vous n\'êtes pas autorisé à épingler ce post'], Response::HTTP_FORBIDDEN);
+        }
+
+        // Si le post est déjà épinglé, le désépingler
+        if ($post->isPinned()) {
+            $post->setIsPinned(false);
+        } else {
+            // Sinon, d'abord désépingler tous les autres posts de l'utilisateur
+            $userPosts = $postRepository->findBy(['user' => $user, 'isPinned' => true]);
+            foreach ($userPosts as $userPost) {
+                $userPost->setIsPinned(false);
+            }
+
+            // Puis épingler le post actuel
+            $post->setIsPinned(true);
+        }
+
+        $entityManager->flush();
+
+        return $this->json([
+            'id' => $post->getId(),
+            'isPinned' => $post->isPinned(),
+            'message' => $post->isPinned() ? 'Post épinglé avec succès' : 'Post désépinglé avec succès'
         ]);
     }
 }

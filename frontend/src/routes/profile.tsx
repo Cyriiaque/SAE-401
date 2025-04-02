@@ -6,7 +6,16 @@ import TweetCard from '../components/TweetCard';
 import Sidebar from '../components/Sidebar';
 import ConfirmModal from '../components/ConfirmModal';
 import EditProfileModal from '../components/EditProfileModal';
-import { fetchUserPosts, Tweet, deletePost, updateUser, getImageUrl, fetchBlockedUsers, toggleBlockUser } from '../lib/loaders';
+import {
+    fetchUserPosts,
+    Tweet,
+    deletePost,
+    updateUser,
+    getImageUrl,
+    fetchBlockedUsers,
+    toggleBlockUser,
+    togglePinPost
+} from '../lib/loaders';
 import UserProfile from '../components/UserProfile';
 import { User } from '../lib/loaders';
 
@@ -67,6 +76,8 @@ export default function Profile() {
     const [blockedUsers, setBlockedUsers] = useState<User[]>([]);
     const [showBlockedUsers, setShowBlockedUsers] = useState(false);
     const [loadingBlockedUsers, setLoadingBlockedUsers] = useState(false);
+    const [pinnedPost, setPinnedPost] = useState<Tweet | null>(null);
+    const [regularPosts, setRegularPosts] = useState<Tweet[]>([]);
 
     const loadPosts = async () => {
         if (!user) return;
@@ -74,6 +85,13 @@ export default function Profile() {
         setLoading(true);
         try {
             const response = await fetchUserPosts(user.id);
+
+            // Séparer les posts épinglés des posts réguliers
+            const pinned = response.posts.find(post => post.isPinned);
+            const regular = response.posts.filter(post => !post.isPinned);
+
+            setPinnedPost(pinned || null);
+            setRegularPosts(regular);
             setPosts(response.posts);
         } catch (error) {
             console.error('Erreur lors du chargement des posts:', error);
@@ -91,11 +109,61 @@ export default function Profile() {
 
         try {
             await deletePost(postToDelete);
+
+            // Mettre à jour les états en fonction du post supprimé
+            if (pinnedPost && pinnedPost.id === postToDelete) {
+                setPinnedPost(null);
+            }
+
+            setRegularPosts(regularPosts.filter(post => post.id !== postToDelete));
             setPosts(posts.filter(post => post.id !== postToDelete));
+
             setDeleteDialogOpen(false);
             setPostToDelete(null);
         } catch (error) {
             console.error('Erreur lors de la suppression du post:', error);
+        }
+    };
+
+    const handleTogglePin = async (postId: number) => {
+        try {
+            const result = await togglePinPost(postId);
+
+            // Si on vient d'épingler un post
+            if (result.isPinned) {
+                // Trouver le post qui vient d'être épinglé
+                const newPinnedPost = posts.find(p => p.id === postId);
+                if (newPinnedPost) {
+                    // Mettre à jour le post avec isPinned = true
+                    const updatedPost = { ...newPinnedPost, isPinned: true };
+
+                    // Définir ce post comme le pinnedPost
+                    setPinnedPost(updatedPost);
+
+                    // Retirer ce post des posts réguliers
+                    setRegularPosts(regularPosts.filter(p => p.id !== postId));
+
+                    // Mettre à jour la liste complète
+                    setPosts(posts.map(p => p.id === postId ? updatedPost : { ...p, isPinned: false }));
+                }
+            } else {
+                // Si on vient de désépingler un post
+                if (pinnedPost && pinnedPost.id === postId) {
+                    // Créer une version désépinglée du post
+                    const unpinnedPost = { ...pinnedPost, isPinned: false };
+
+                    // Ajouter ce post aux posts réguliers
+                    setRegularPosts([unpinnedPost, ...regularPosts]);
+
+                    // Supprimer le post épinglé
+                    setPinnedPost(null);
+
+                    // Mettre à jour la liste complète
+                    setPosts(posts.map(p => p.id === postId ? unpinnedPost : p));
+                }
+            }
+        } catch (error) {
+            console.error('Erreur lors de l\'épinglage/désépinglage du post:', error);
         }
     };
 
@@ -197,6 +265,7 @@ export default function Profile() {
         const handleTweetPublished = (event: CustomEvent<Tweet>) => {
             const newTweet = event.detail;
             if (newTweet.user?.id === user?.id) {
+                setRegularPosts(prevPosts => [newTweet, ...prevPosts]);
                 setPosts(prevPosts => [newTweet, ...prevPosts]);
             }
         };
@@ -222,6 +291,28 @@ export default function Profile() {
         navigate('/signin');
         return null;
     }
+
+    const PinButton = ({ post }: { post: Tweet }) => (
+        <button
+            onClick={() => handleTogglePin(post.id)}
+            className="flex items-center text-gray-500 hover:text-orange transition-colors"
+            title={post.isPinned ? "Désépingler" : "Épingler sur le profil"}
+        >
+            {post.isPinned ? (
+                <>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-orange" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M21.447 9.559a1.8 1.8 0 0 1-.25.82a2 2 0 0 1-.56.63a.7.7 0 0 1-.34.13l-1.76.23a1 1 0 0 0-.52.26c-.53.51-1.07 1-1.81 1.78l-.85.84a.93.93 0 0 0-.23.41l-.94 3.78a.6.6 0 0 1 0 .12a2 2 0 0 1-1.44 1.15h-.36a2.3 2.3 0 0 1-.58-.08a1.94 1.94 0 0 1-.81-.49l-2.54-2.53l-4.67 4.67a.75.75 0 0 1-1.06-1.06l4.67-4.67l-2.5-2.5a2 2 0 0 1-.48-.82a1.8 1.8 0 0 1-.05-.95a1.94 1.94 0 0 1 .39-.85a2 2 0 0 1 .75-.58h.12l3.74-1a1 1 0 0 0 .44-.25c1.39-1.37 1.87-1.85 2.63-2.67a.86.86 0 0 0 .23-.5l.24-1.77a.7.7 0 0 1 .13-.35a2 2 0 0 1 2.28-.69a2 2 0 0 1 .72.46l4.88 4.9a2 2 0 0 1 .57 1.55z" />
+                    </svg>
+                </>
+            ) : (
+                <>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="m17.942 6.076l2.442 2.442a1.22 1.22 0 0 1-.147 1.855l-1.757.232a1.7 1.7 0 0 0-.94.452c-.72.696-1.453 1.428-2.674 2.637c-.21.212-.358.478-.427.769l-.94 3.772a1.22 1.22 0 0 1-1.978.379l-3.04-3.052l-3.052-3.04a1.22 1.22 0 0 1 .379-1.978l3.747-.964a1.8 1.8 0 0 0 .77-.44c1.379-1.355 1.88-1.855 2.66-2.698c.233-.25.383-.565.428-.903l.232-1.783a1.22 1.22 0 0 1 1.856-.146zm-9.51 9.498L3.256 20.75" />
+                    </svg>
+                </>
+            )}
+        </button>
+    );
 
     return (
         <div className="flex min-h-screen bg-white">
@@ -426,23 +517,64 @@ export default function Profile() {
                         </div>
                     </div>
 
-                    {/* Tweets */}
-                    <div className="mt-8 divide-y divide-gray-200">
-                        {posts.map((post) => (
-                            <div key={post.id}>
-                                <TweetCard
-                                    tweet={post}
-                                    onDelete={handleDeleteClick}
-                                    onUserProfileClick={handleUserProfileClick}
-                                    onPostUpdated={(updatedTweet) => {
-                                        setPosts(prev => prev.map(p => p.id === updatedTweet.id ? updatedTweet : p));
-                                    }}
-                                />
+                    {/* Tweets épinglés */}
+                    {pinnedPost && (
+                        <div className="mt-6">
+                            <div className="px-4 py-2 text-sm font-medium text-gray-600 flex items-center">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2 text-orange" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M21.447 9.559a1.8 1.8 0 0 1-.25.82a2 2 0 0 1-.56.63a.7.7 0 0 1-.34.13l-1.76.23a1 1 0 0 0-.52.26c-.53.51-1.07 1-1.81 1.78l-.85.84a.93.93 0 0 0-.23.41l-.94 3.78a.6.6 0 0 1 0 .12a2 2 0 0 1-1.44 1.15h-.36a2.3 2.3 0 0 1-.58-.08a1.94 1.94 0 0 1-.81-.49l-2.54-2.53l-4.67 4.67a.75.75 0 0 1-1.06-1.06l4.67-4.67l-2.5-2.5a2 2 0 0 1-.48-.82a1.8 1.8 0 0 1-.05-.95a1.94 1.94 0 0 1 .39-.85a2 2 0 0 1 .75-.58h.12l3.74-1a1 1 0 0 0 .44-.25c1.39-1.37 1.87-1.85 2.63-2.67a.86.86 0 0 0 .23-.5l.24-1.77a.7.7 0 0 1 .13-.35a2 2 0 0 1 2.28-.69a2 2 0 0 1 .72.46l4.88 4.9a2 2 0 0 1 .57 1.55z" />
+                                </svg>
+                                Post épinglé
                             </div>
-                        ))}
-                        {loading && (
-                            <div className="p-4 text-center text-gray-500">
-                                Chargement...
+                            <div className="border-b border-gray-200">
+                                <div className="relative">
+                                    <div className="absolute right-4 top-4 z-10">
+                                        <PinButton post={pinnedPost} />
+                                    </div>
+                                    <TweetCard
+                                        tweet={pinnedPost}
+                                        onDelete={handleDeleteClick}
+                                        onUserProfileClick={handleUserProfileClick}
+                                        onPostUpdated={(updatedTweet) => {
+                                            // Mettre à jour le tweet épinglé
+                                            setPinnedPost(updatedTweet);
+                                            setPosts(prev => prev.map(p => p.id === updatedTweet.id ? updatedTweet : p));
+                                        }}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Tweets réguliers */}
+                    <div className="mt-4">
+                        {regularPosts.length === 0 && !pinnedPost && !loading ? (
+                            <div className="text-center text-gray-500 py-8">
+                                Aucun post à afficher
+                            </div>
+                        ) : (
+                            <div className="divide-y divide-gray-200">
+                                {regularPosts.map((post) => (
+                                    <div key={post.id} className="relative">
+                                        <div className="absolute right-4 top-4 z-10">
+                                            <PinButton post={post} />
+                                        </div>
+                                        <TweetCard
+                                            tweet={post}
+                                            onDelete={handleDeleteClick}
+                                            onUserProfileClick={handleUserProfileClick}
+                                            onPostUpdated={(updatedTweet) => {
+                                                setRegularPosts(prev => prev.map(p => p.id === updatedTweet.id ? updatedTweet : p));
+                                                setPosts(prev => prev.map(p => p.id === updatedTweet.id ? updatedTweet : p));
+                                            }}
+                                        />
+                                    </div>
+                                ))}
+                                {loading && (
+                                    <div className="p-4 text-center text-gray-500">
+                                        Chargement...
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
@@ -462,8 +594,14 @@ export default function Profile() {
 
             {/* Profil utilisateur */}
             {selectedUserId && (
-                <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center backdrop-blur-sm overflow-y-auto">
-                    <div className="w-full max-w-2xl mx-auto my-auto">
+                <div
+                    className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center backdrop-blur-sm overflow-y-auto"
+                    onClick={handleCloseUserProfile}
+                >
+                    <div
+                        className="w-full max-w-2xl mx-auto my-auto"
+                        onClick={(e) => e.stopPropagation()}
+                    >
                         <UserProfile
                             userId={selectedUserId}
                             onClose={handleCloseUserProfile}

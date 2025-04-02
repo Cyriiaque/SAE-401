@@ -29,6 +29,9 @@ class Post
     #[ORM\Column(type: 'boolean', options: ['default' => false])]
     private ?bool $isCensored = false;
 
+    #[ORM\Column(type: 'boolean', options: ['default' => false])]
+    private ?bool $isPinned = false;
+
     public function getId(): ?int
     {
         return $this->id;
@@ -96,6 +99,17 @@ class Post
     public function setIsCensored(bool $isCensored): static
     {
         $this->isCensored = $isCensored;
+        return $this;
+    }
+
+    public function isPinned(): ?bool
+    {
+        return $this->isPinned;
+    }
+
+    public function setIsPinned(bool $isPinned): static
+    {
+        $this->isPinned = $isPinned;
         return $this;
     }
 }

@@ -349,8 +349,14 @@ export default function Home() {
 
       {/* Profil utilisateur */}
       {selectedUserId && (
-        <div className="fixed inset-0 bg-black/30 bg-opacity-50 z-50 flex items-center justify-center backdrop-blur-sm overflow-y-auto">
-          <div className="w-full max-w-2xl mx-auto my-auto">
+        <div
+          className="fixed inset-0 bg-black/30 bg-opacity-50 z-50 flex items-center justify-center backdrop-blur-sm overflow-y-auto"
+          onClick={handleCloseUserProfile}
+        >
+          <div
+            className="w-full max-w-2xl mx-auto my-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
             <UserProfile
               userId={selectedUserId}
               onClose={handleCloseUserProfile}
