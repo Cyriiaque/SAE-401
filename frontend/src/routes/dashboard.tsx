@@ -30,6 +30,7 @@ export default function Dashboard() {
     const [searchQuery, setSearchQuery] = useState<string>('');
     const [isSearching, setIsSearching] = useState<boolean>(false);
     const [searchMode, setSearchMode] = useState<boolean>(false);
+    const [bannedPostsCount, setBannedPostsCount] = useState(0);
 
     useEffect(() => {
         if (activeTab === 'users') {
@@ -64,10 +65,24 @@ export default function Dashboard() {
         setSearchMode(false);
         try {
             const data = await fetchAllPosts(pageNum);
+
+            // Filtrer les posts des utilisateurs bannis
+            const bannedPosts = data.posts.filter(post => post.user && post.user.isbanned);
+            const filteredPosts = data.posts.filter(post => {
+                return !(post.user && post.user.isbanned);
+            });
+
+            // Mettre à jour le compteur si c'est une première page ou un ajout
+            if (pageNum === 1) {
+                setBannedPostsCount(bannedPosts.length);
+            } else if (append) {
+                setBannedPostsCount(prev => prev + bannedPosts.length);
+            }
+
             if (append) {
-                setPosts(prev => [...prev, ...data.posts]);
+                setPosts(prev => [...prev, ...filteredPosts]);
             } else {
-                setPosts(data.posts);
+                setPosts(filteredPosts);
             }
             setHasMore(data.next_page !== null);
             setPage(pageNum);
@@ -94,7 +109,17 @@ export default function Dashboard() {
         setError(null);
         try {
             const data = await searchPosts(searchQuery);
-            setPosts(data.posts);
+
+            // Filtrer les posts des utilisateurs bannis
+            const bannedPosts = data.posts.filter(post => post.user && post.user.isbanned);
+            const filteredPosts = data.posts.filter(post => {
+                return !(post.user && post.user.isbanned);
+            });
+
+            // Mettre à jour le compteur
+            setBannedPostsCount(bannedPosts.length);
+
+            setPosts(filteredPosts);
             setSearchMode(true);
             setHasMore(false);
         } catch (err) {
@@ -123,6 +148,7 @@ export default function Dashboard() {
 
     const handleClearSearch = () => {
         setSearchQuery('');
+        setBannedPostsCount(0);
         loadPosts();
     };
 
@@ -449,6 +475,18 @@ export default function Dashboard() {
                                         </svg>
                                         Effacer et afficher tout
                                     </button>
+                                </div>
+                            )}
+
+                            {/* Information sur les posts filtrés */}
+                            {bannedPostsCount > 0 && (
+                                <div className="mb-4 p-3 bg-gray-100 rounded-lg text-gray-700">
+                                    <div className="flex items-center">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-orange" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                        </svg>
+                                        <span>{bannedPostsCount} post{bannedPostsCount > 1 ? 's' : ''} d'utilisateurs bannis {bannedPostsCount > 1 ? 'ont été masqués' : 'a été masqué'}</span>
+                                    </div>
                                 </div>
                             )}
 
