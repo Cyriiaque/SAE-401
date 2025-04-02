@@ -901,7 +901,6 @@ export async function fetchBlockedUsers(): Promise<{ blockedUsers: User[] }> {
     }
 
     const response = await fetch(`${API_BASE_URL}/users/blocked`, {
-        method: 'GET',
         headers: {
             'Authorization': `Bearer ${token}`
         }
@@ -1015,5 +1014,32 @@ export async function searchPosts(searchQuery: string): Promise<{ posts: Tweet[]
     } catch (error) {
         console.error('Erreur searchPosts:', error);
         throw error;
+    }
+}
+
+// Fonction pour rechercher des utilisateurs par query (pour les mentions)
+export async function fetchUsersByQuery(query: string): Promise<User[]> {
+    if (!query || query.trim() === '') {
+        return [];
+    }
+
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('Non authentifié');
+    }
+
+    // Recherche côté client uniquement
+    try {
+        // Récupérer tous les utilisateurs
+        const allUsers = await fetchUsers();
+
+        // Filtrer les utilisateurs qui correspondent à la recherche
+        return allUsers.filter(user =>
+            (user.mention && user.mention.toLowerCase().includes(query.toLowerCase())) ||
+            (user.name && user.name.toLowerCase().includes(query.toLowerCase()))
+        );
+    } catch (error) {
+        console.error("Erreur lors de la recherche d'utilisateurs:", error);
+        throw new Error("Erreur lors de la recherche des utilisateurs");
     }
 }

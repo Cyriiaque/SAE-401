@@ -1,9 +1,12 @@
-import { Tweet, fetchReplies, createReply, Reply, getLikeStatus, getImageUrl, checkBlockStatus } from '../lib/loaders';
+import { Tweet, fetchReplies, createReply, Reply, getLikeStatus, getImageUrl, checkBlockStatus, fetchUsersByQuery } from '../lib/loaders';
 import { useState, useEffect, useRef } from 'react';
-import { likePost } from '../lib/loaders';
+import { likePost, unlikePost } from '../lib/loaders';
 import { useAuth } from '../contexts/AuthContext';
 import PostModal from './PostModal';
 import Button from '../ui/buttons';
+import UserProfile from './UserProfile';
+import { useNavigate } from 'react-router-dom';
+import React from 'react';
 
 interface TweetCardProps {
   tweet: Tweet;
@@ -78,6 +81,62 @@ function formatContent(content: string): string {
   return formattedContent;
 }
 
+// Fonction pour formater le contenu avec hashtags et mentions cliquables
+function formatContentWithLinks(content: string, onHashtagClick: (hashtag: string) => void, onMentionClick: (mention: string) => void): React.ReactNode {
+  // Regex pour détecter les hashtags et mentions
+  const regex = /(\s|^)([@#][\w]+)/g;
+  const parts = [];
+  let lastIndex = 0;
+  let match;
+
+  // Parcourir toutes les correspondances
+  while ((match = regex.exec(content)) !== null) {
+    const fullMatch = match[0];
+    const spaceOrStart = match[1];
+    const tagOrMention = match[2];
+
+    // Ajouter le texte avant la correspondance
+    if (match.index > lastIndex) {
+      parts.push(content.substring(lastIndex, match.index));
+    }
+
+    // Ajouter l'espace ou le début
+    parts.push(spaceOrStart);
+
+    // Ajouter le hashtag ou la mention avec un gestionnaire de clic
+    if (tagOrMention.startsWith('#')) {
+      parts.push(
+        <button
+          key={match.index}
+          className="text-orange font-semibold hover:underline"
+          onClick={() => onHashtagClick(tagOrMention.substring(1))}
+        >
+          {tagOrMention}
+        </button>
+      );
+    } else if (tagOrMention.startsWith('@')) {
+      parts.push(
+        <button
+          key={match.index}
+          className="text-blue-600 font-semibold hover:underline"
+          onClick={() => onMentionClick(tagOrMention.substring(1))}
+        >
+          {tagOrMention}
+        </button>
+      );
+    }
+
+    lastIndex = match.index + fullMatch.length;
+  }
+
+  // Ajouter le reste du texte
+  if (lastIndex < content.length) {
+    parts.push(content.substring(lastIndex));
+  }
+
+  return <>{parts}</>;
+}
+
 export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostUpdated }: TweetCardProps) {
   const { user } = useAuth();
   const [likes, setLikes] = useState(tweet.likes);
@@ -99,6 +158,8 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
   const replyInputRef = useRef<HTMLTextAreaElement>(null);
   const replyFormRef = useRef<HTMLDivElement>(null);
   const [displayedRepliesCount, setDisplayedRepliesCount] = useState<number>(3);
+  const navigate = useNavigate();
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // Nouvelle logique pour gérer les utilisateurs bannis
   const isBanned = tweet.user?.isbanned ?? false;
@@ -556,6 +617,45 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
     );
   }
 
+  const handleHashtagClick = (hashtag: string) => {
+    // Rediriger vers la page d'accueil avec recherche pour ce hashtag
+    navigate(`/?q=${encodeURIComponent(hashtag)}`);
+  };
+
+  const handleMentionClick = async (mention: string) => {
+    // Si le tweet a un auteur et que la mention correspond à l'auteur du tweet
+    if (tweet.user && tweet.user.mention === mention) {
+      // Afficher le profil de l'utilisateur
+      if (onUserProfileClick && tweet.user) {
+        onUserProfileClick(tweet.user.id);
+      }
+      return;
+    }
+
+    // Sinon, chercher l'utilisateur par sa mention
+    if (onUserProfileClick) {
+      try {
+        // Rechercher l'utilisateur par sa mention
+        const users = await fetchUsersByQuery(mention);
+
+        // Trouver l'utilisateur dont la mention correspond exactement
+        const matchedUser = users.find(user => user.mention === mention);
+
+        if (matchedUser) {
+          // Afficher le profil de l'utilisateur trouvé
+          onUserProfileClick(matchedUser.id);
+        } else if (users.length > 0) {
+          // Si pas de correspondance exacte mais des résultats, prendre le premier
+          onUserProfileClick(users[0].id);
+        } else {
+          console.error(`Aucun utilisateur trouvé avec la mention @${mention}`);
+        }
+      } catch (error) {
+        console.error('Erreur lors de la recherche de l\'utilisateur par mention:', error);
+      }
+    }
+  };
+
   return (
     <div className="border-b border-gray-300">
       {errorMessage && (
@@ -591,7 +691,10 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
               </div>
             </div>
             <div className="mt-2 text-gray-800 whitespace-pre-wrap">
-              {formattedContent}
+              {tweet.isCensored ?
+                formattedContent :
+                formatContentWithLinks(formattedContent, handleHashtagClick, handleMentionClick)
+              }
             </div>
             {currentTweet.mediaUrl && (
               <div
@@ -719,11 +822,11 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
                   <div className="flex items-center space-x-4">
                     <button
                       onClick={() => setIsEditModalOpen(true)}
-                      className="flex items-center space-x-2 cursor-pointer group text-gray-500 hover:text-blue-500"
+                      className="flex items-center space-x-2 cursor-pointer group text-gray-500 hover:text-orange"
                       title="Modifier le post"
                     >
                       <svg
-                        className="h-5 w-5 fill-none group-hover:stroke-blue-500"
+                        className="h-5 w-5 fill-none group-hover:stroke-orange"
                         viewBox="0 0 24 24"
                         stroke="currentColor"
                       >

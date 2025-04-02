@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { usePostModal } from '../contexts/PostModalContext';
 import TweetCard from '../components/TweetCard';
@@ -118,6 +118,7 @@ const TabNavigation = ({
 export default function Home() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [posts, setPosts] = useState<Tweet[]>([]);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
@@ -171,7 +172,25 @@ export default function Home() {
     getBlockedUsers();
   }, [user]);
 
-  const loadPosts = async (pageNumber: number) => {
+  useEffect(() => {
+    // Extraire un éventuel paramètre de recherche de l'URL
+    const params = new URLSearchParams(location.search);
+    const hashtagParam = params.get('q');
+
+    // Si un hashtag est présent dans l'URL, lancer la recherche
+    if (hashtagParam) {
+      setSearchQuery(hashtagParam);
+      setSearchMode(true);
+
+      // On utilise un setTimeout pour s'assurer que les états sont bien mis à jour
+      setTimeout(() => {
+        handleSearch();
+      }, 0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search]); // Réagir aux changements dans l'URL avec location.search
+
+  const loadPosts = async (pageNumber: number = 1) => {
     if (!user || !hasMore) return;
 
     setLoading(true);
@@ -322,7 +341,14 @@ export default function Home() {
     setUserFilter('');
     setModerationFilterCount(0);
     setSearchMode(false);
-    loadPosts(1);
+
+    // Si nous sommes sur une URL avec des paramètres, rediriger vers la page d'accueil
+    if (location.search) {
+      navigate('/');
+    } else {
+      // Sinon, simplement recharger les posts
+      loadPosts(1);
+    }
   };
 
   const toggleFilters = () => {

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
-import { Tweet, uploadImage, getImageUrl, updatePost, createPost, deleteMediaFile } from '../lib/loaders.tsx';
+import { Tweet, uploadImage, getImageUrl, updatePost, createPost, deleteMediaFile, fetchUsersByQuery, User } from '../lib/loaders.tsx';
+import Button from '../ui/buttons';
 
 interface PostModalProps {
     isOpen: boolean;
@@ -36,6 +37,12 @@ export default function PostModal({
         cancel: () => void
     }>>({});
     const [mediaToDelete, setMediaToDelete] = useState<string[]>([]);
+    const [suggestedUsers, setSuggestedUsers] = useState<User[]>([]);
+    const [showUserSuggestions, setShowUserSuggestions] = useState(false);
+    const [currentMention, setCurrentMention] = useState('');
+    const [cursorPosition, setCursorPosition] = useState(0);
+    const searchTimeout = useRef<number | null>(null);
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
     const maxLength = 280;
     const maxMediaCount = 10;
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -80,6 +87,15 @@ export default function PostModal({
             setMediaToDelete([]);
         }
     }, [tweet, isOpen, mode]);
+
+    // Nettoyer le timeout lors du démontage du composant
+    useEffect(() => {
+        return () => {
+            if (searchTimeout.current) {
+                clearTimeout(searchTimeout.current);
+            }
+        };
+    }, []);
 
     // Fonction pour compresser une image
     const compressImage = (file: File, maxSizeInMB: number = 1): Promise<File> => {
@@ -1214,6 +1230,123 @@ export default function PostModal({
         onClose();
     };
 
+    // Recherche d'utilisateurs pour les mentions
+    const searchUsers = async (query: string) => {
+        if (!query || query.length < 2) {
+            setSuggestedUsers([]);
+            return;
+        }
+
+        try {
+            const users = await fetchUsersByQuery(query);
+            // Limiter à 5 suggestions les plus pertinentes
+            const sortedUsers = users
+                // Trier par pertinence (si commence par la requête en premier)
+                .sort((a, b) => {
+                    const aStarts = a.mention?.toLowerCase().startsWith(query.toLowerCase()) || false;
+                    const bStarts = b.mention?.toLowerCase().startsWith(query.toLowerCase()) || false;
+                    if (aStarts && !bStarts) return -1;
+                    if (!aStarts && bStarts) return 1;
+                    return 0;
+                })
+                .slice(0, 5);
+
+            setSuggestedUsers(sortedUsers);
+        } catch (error) {
+            console.error('Erreur lors de la recherche des utilisateurs:', error);
+            setSuggestedUsers([]);
+        }
+    };
+
+    // Gérer la saisie de texte avec détection des hashtags et mentions
+    const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+        const newContent = e.target.value;
+        setContent(newContent);
+
+        // Sauvegarder la position du curseur
+        if (textareaRef.current) {
+            setCursorPosition(textareaRef.current.selectionStart);
+        }
+
+        // Détecter si nous sommes en train de taper une mention
+        const text = newContent.substring(0, e.target.selectionStart);
+        const mentionMatch = text.match(/@(\w*)$/);
+
+        if (mentionMatch) {
+            const mention = mentionMatch[1];
+            setCurrentMention(mention);
+
+            // Annuler la recherche précédente si en cours
+            if (searchTimeout.current) {
+                clearTimeout(searchTimeout.current);
+            }
+
+            // Attendre un peu avant de lancer la recherche (300ms)
+            searchTimeout.current = window.setTimeout(() => {
+                searchUsers(mention);
+            }, 300);
+
+            setShowUserSuggestions(true);
+        } else {
+            setShowUserSuggestions(false);
+        }
+    };
+
+    // Insérer une mention dans le contenu
+    const insertMention = (user: User) => {
+        if (!textareaRef.current) return;
+
+        const text = content;
+        const curPos = cursorPosition;
+
+        // Trouver le début de la mention
+        let startPos = curPos;
+        while (startPos > 0 && text.charAt(startPos - 1) !== '@' && !text.charAt(startPos - 1).match(/\s/)) {
+            startPos--;
+        }
+        if (startPos > 0 && text.charAt(startPos - 1) === '@') {
+            startPos--;
+        }
+
+        // Insérer la mention formatée
+        const newText = text.substring(0, startPos) +
+            `@${user.mention}` +
+            text.substring(curPos);
+
+        setContent(newText);
+        setShowUserSuggestions(false);
+
+        // Replacer le focus sur le textarea
+        setTimeout(() => {
+            if (textareaRef.current) {
+                textareaRef.current.focus();
+                const newCursorPos = startPos + user.mention!.length + 1; // +1 pour le @
+                textareaRef.current.setSelectionRange(newCursorPos, newCursorPos);
+                setCursorPosition(newCursorPos);
+            }
+        }, 10);
+    };
+
+    // Insérer un hashtag
+    const insertHashtag = () => {
+        if (!textareaRef.current) return;
+
+        const curPos = textareaRef.current.selectionStart;
+        const newText = content.substring(0, curPos) + '#' + content.substring(curPos);
+
+        setContent(newText);
+
+        // Replacer le focus et déplacer le curseur
+        setTimeout(() => {
+            if (textareaRef.current) {
+                textareaRef.current.focus();
+                const newCursorPos = curPos + 1;
+                textareaRef.current.setSelectionRange(newCursorPos, newCursorPos);
+                setCursorPosition(newCursorPos);
+            }
+        }, 10);
+    };
+
     if (!isOpen) return null;
 
     return (
@@ -1233,8 +1366,9 @@ export default function PostModal({
 
                 <form onSubmit={handleSubmit}>
                     <textarea
+                        ref={textareaRef}
                         value={content}
-                        onChange={(e) => setContent(e.target.value)}
+                        onChange={handleContentChange}
                         placeholder="Qu'avez-vous à dire ?"
                         className={`w-full p-3 border rounded-lg resize-none focus:outline-none focus:ring-2 ${content.length > maxLength
                             ? 'border-red-500 focus:ring-red-500'
@@ -1242,6 +1376,34 @@ export default function PostModal({
                             }`}
                         rows={4}
                     />
+
+                    {/* Suggestions d'utilisateurs pour les mentions */}
+                    {showUserSuggestions && suggestedUsers.length > 0 && (
+                        <div className="mt-2 bg-white rounded-lg border border-gray-300 shadow-lg max-h-64 overflow-y-auto">
+                            <div className="p-2 bg-gray-100 text-sm font-medium text-gray-700 border-b border-gray-300">
+                                Utilisateurs suggérés
+                            </div>
+                            <div>
+                                {suggestedUsers.map(user => (
+                                    <div
+                                        key={user.id}
+                                        className="p-2 hover:bg-gray-100 cursor-pointer flex items-center"
+                                        onClick={() => insertMention(user)}
+                                    >
+                                        <img
+                                            src={user.avatar ? getImageUrl(user.avatar) : '/default_pp.webp'}
+                                            alt={user.name || ''}
+                                            className="w-8 h-8 rounded-full mr-2"
+                                        />
+                                        <div>
+                                            <div className="font-medium">{user.name}</div>
+                                            <div className="text-sm text-gray-500">@{user.mention}</div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                     <div className={`text-right text-sm ${content.length > maxLength ? 'text-red-500' : 'text-gray-500'}`}>
                         {content.length}/{maxLength}
                     </div>
@@ -1405,33 +1567,59 @@ export default function PostModal({
                     )}
                     <div className="flex justify-between mt-4">
                         <div className="flex space-x-2">
-                            <input
-                                type="file"
-                                ref={fileInputRef}
-                                onChange={handleMediaChange}
-                                accept="image/*,video/*"
-                                className="hidden"
-                                multiple
-                            />
-                            <button
-                                type="button"
-                                onClick={() => fileInputRef.current?.click()}
-                                className="
-                                    text-orange 
-                                    hover:text-dark-orange 
-                                    cursor-pointer 
-                                    p-1.5
-                                    rounded-full 
-                                    border 
-                                    border-orange 
-                                    hover:border-dark-orange 
-                                    transition-colors
-                                "
-                                disabled={mediaPreviews.length >= maxMediaCount}
+                            <label
+                                htmlFor="media-upload"
+                                className={`p-2 rounded-lg border ${mediaPreviews.length >= maxMediaCount
+                                    ? 'bg-gray-200 cursor-not-allowed border-gray-300 text-gray-500'
+                                    : 'bg-white hover:bg-gray-100 cursor-pointer border-gray-300 text-gray-700'
+                                    }`}
+                                title={mediaPreviews.length >= maxMediaCount ? `Maximum ${maxMediaCount} médias` : "Ajouter des médias"}
                             >
-                                <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                 </svg>
+                            </label>
+                            <input
+                                id="media-upload"
+                                type="file"
+                                multiple
+                                accept="image/*,video/*"
+                                onChange={handleMediaChange}
+                                className="hidden"
+                                disabled={mediaPreviews.length >= maxMediaCount}
+                            />
+
+                            {/* Boutons pour insérer hashtag et mention */}
+                            <button
+                                type="button"
+                                onClick={insertHashtag}
+                                className="p-2 rounded-lg border border-gray-300 bg-white hover:bg-gray-100 text-gray-700"
+                                title="Insérer un hashtag"
+                            >
+                                <span className="font-bold text-orange">#</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    if (textareaRef.current) {
+                                        const curPos = textareaRef.current.selectionStart;
+                                        const newText = content.substring(0, curPos) + '@' + content.substring(curPos);
+                                        setContent(newText);
+
+                                        setTimeout(() => {
+                                            if (textareaRef.current) {
+                                                textareaRef.current.focus();
+                                                const newCursorPos = curPos + 1;
+                                                textareaRef.current.setSelectionRange(newCursorPos, newCursorPos);
+                                                setCursorPosition(newCursorPos);
+                                            }
+                                        }, 10);
+                                    }
+                                }}
+                                className="p-2 rounded-lg border border-gray-300 bg-white hover:bg-gray-100 text-gray-700"
+                                title="Mentionner un utilisateur"
+                            >
+                                <span className="font-bold text-blue-600">@</span>
                             </button>
                         </div>
                         <button
