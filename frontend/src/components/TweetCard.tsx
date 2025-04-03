@@ -256,7 +256,9 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
 
       try {
         // Si le tweet est déjà un retweet, vérifier le statut du post original
-        const postIdToCheck = tweet.isRetweet && tweet.originalPost ? tweet.originalPost.id : currentTweet.id;
+        const postIdToCheck = tweet.isRetweet && tweet.originalPost && tweet.originalPost.id !== null
+          ? tweet.originalPost.id
+          : currentTweet.id;
         const status = await getRetweetStatus(postIdToCheck);
         setRetweets(status.retweets);
         setIsRetweeted(status.isRetweeted);
@@ -479,8 +481,24 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
         className="fixed inset-0 bg-black/80 z-50 flex flex-col"
         onClick={() => setIsMediaOverlayOpen(false)}
       >
-        {/* Conteneur principal avec hauteur fixe */}
-        <div className="h-[calc(100vh-64px)] flex items-center justify-center p-8">
+        {/* Bouton de fermeture */}
+        <button
+          className="absolute top-4 right-4 bg-black/50 hover:bg-black/70 text-white p-2 rounded-full transition-colors z-10 cursor-pointer"
+          onClick={(e) => {
+            e.stopPropagation();
+            setIsMediaOverlayOpen(false);
+          }}
+          aria-label="Fermer"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+
+        <div
+          className="h-[calc(100vh-64px)] flex items-center justify-center p-8"
+          onClick={(e) => e.stopPropagation()}
+        >
           <div
             className="max-w-4xl w-full"
             onClick={(e) => e.stopPropagation()}
@@ -511,7 +529,7 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
             <div className="flex items-center space-x-4">
               <button
                 onClick={handlePrevious}
-                className="bg-black/50 hover:bg-black/70 text-white p-2 rounded-full transition-colors"
+                className="bg-black/50 hover:bg-black/70 text-white p-2 rounded-full transition-colors cursor-pointer"
                 aria-label="Image précédente"
               >
                 <svg
@@ -534,7 +552,7 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
               </div>
               <button
                 onClick={handleNext}
-                className="bg-black/50 hover:bg-black/70 text-white p-2 rounded-full transition-colors"
+                className="bg-black/50 hover:bg-black/70 text-white p-2 rounded-full transition-colors cursor-pointer"
                 aria-label="Image suivante"
               >
                 <svg
@@ -596,10 +614,12 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
     }
 
     try {
-      // Si le tweet est déjà un retweet, on utilise l'ID du post original
-      const postIdToRetweet = tweet.isRetweet && tweet.originalPost ? tweet.originalPost.id : currentTweet.id;
+      // Si le tweet est déjà un retweet, on utilise l'ID du post original s'il existe
+      const postIdToRetweet = tweet.isRetweet && tweet.originalPost && tweet.originalPost.id !== null
+        ? tweet.originalPost.id
+        : currentTweet.id;
 
-      // If user is blocked, this will throw an error
+      // La fonction retweetPost attend le paramètre 'content' et non 'comment'
       const newRetweet = await retweetPost(postIdToRetweet, '');
 
       // Mettre à jour l'UI
@@ -628,10 +648,12 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
     }
 
     try {
-      // Si le tweet est déjà un retweet, on utilise l'ID du post original
-      const postIdToRetweet = tweet.isRetweet && tweet.originalPost ? tweet.originalPost.id : currentTweet.id;
+      // Si le tweet est déjà un retweet, on utilise l'ID du post original s'il existe
+      const postIdToRetweet = tweet.isRetweet && tweet.originalPost && tweet.originalPost.id !== null
+        ? tweet.originalPost.id
+        : currentTweet.id;
 
-      // If user is blocked, this will throw an error
+      // La fonction retweetPost attend le paramètre 'content' et non 'comment'
       const newRetweet = await retweetPost(postIdToRetweet, retweetComment);
 
       // Mettre à jour l'UI
@@ -866,7 +888,7 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
                             <div
                               key={index}
                               style={mediaStyle}
-                              className="relative rounded-lg overflow-hidden border border-gray-200"
+                              className="relative rounded-lg overflow-hidden cursor-pointer group border-2 border-orange/40 hover:border-orange transition-all duration-200"
                             >
                               {isVideo ? (
                                 <>
@@ -940,16 +962,16 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
 
   // Si c'est un retweet, on ajoute une note en haut
   const RetweetHeader = () => {
-    if (!tweet.isRetweet || !tweet.retweetedBy) return null;
+    if (!tweet.isRetweet || !tweet.originalUser) return null;
 
     return (
-      <div className="flex items-center mb-2 text-gray-500 text-sm">
+      <div className="flex items-center mb-2 text-orange text-sm">
         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
         </svg>
         <span>
-          Repartagé par <span className="font-medium hover:underline cursor-pointer" onClick={() => tweet.retweetedBy && onUserProfileClick?.(tweet.retweetedBy.id)}>
-            @{tweet.retweetedBy.mention}
+          Repartagé d'un tweet de <span className="font-medium hover:underline cursor-pointer" onClick={() => tweet.originalUser && onUserProfileClick?.(tweet.originalUser.id)}>
+            @{tweet.originalUser.mention}
           </span>
         </span>
       </div>
@@ -998,8 +1020,161 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
                 formattedContent :
                 formatContentWithLinks(formattedContent, handleHashtagClick, handleMentionClick)
               }
+              {tweet.isRetweet && tweet.originalPost && (
+                <div className="mt-3 p-3 border rounded-lg bg-gray-50 border-gray-300">
+                  {tweet.originalPost.deleted ? (
+                    <div>
+                      <div className="flex items-center space-x-2 mb-2">
+                        {tweet.originalPost?.user ? (
+                          <>
+                            <img
+                              src={tweet.originalPost.user.avatar ? getImageUrl(tweet.originalPost.user.avatar) : '/default_pp.webp'}
+                              alt={tweet.originalPost.user.name || 'Avatar'}
+                              className="w-6 h-6 rounded-full"
+                              onClick={() => tweet.originalPost?.user?.id && onUserProfileClick?.(tweet.originalPost.user.id)}
+                            />
+                            <div>
+                              <span className="font-medium text-gray-900 dark:text-white">
+                                {tweet.originalPost.user.name}
+                              </span>
+                              <span className="text-gray-500 ml-1">@{tweet.originalPost.user.mention}</span>
+                              <div className="text-gray-500 dark:text-gray-400 italic mt-1">
+                                Post supprimé par son auteur
+                              </div>
+                            </div>
+                          </>
+                        ) : (
+                          <span className="text-gray-500 dark:text-gray-400 italic">
+                            Post supprimé par son auteur
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-gray-800 dark:text-gray-200">
+                        {formatContentWithLinks(tweet.originalPost.content, handleHashtagClick, handleMentionClick)}
+                      </div>
+                      {tweet.originalPost?.mediaUrl && (
+                        <div className="mt-2 grid gap-2 rounded-lg overflow-hidden"
+                          style={tweet.originalPost?.mediaUrl ? getMediaGridLayout(tweet.originalPost.mediaUrl.split(',').filter(Boolean).slice(0, 4).length) : {}}>
+                          {tweet.originalPost?.mediaUrl?.split(',').filter(Boolean).slice(0, 4).map((mediaFile, index) => {
+                            const isVideo = mediaFile.match(/\.(mp4|webm|ogg)$/i);
+                            const mediaFiles = tweet.originalPost?.mediaUrl?.split(',').filter(Boolean) || [];
+                            const mediaStyle = getMediaItemStyle(Math.min(mediaFiles.length, 4), index);
+
+                            return (
+                              <div
+                                key={index}
+                                style={mediaStyle}
+                                className="relative rounded-lg overflow-hidden cursor-pointer group border-1 border-gray-300 hover:border-black transition-all duration-200"
+                                onClick={() => openMediaOverlay(index)}
+                              >
+                                {isVideo ? (
+                                  <div className="relative aspect-video">
+                                    <video
+                                      src={getImageUrl(mediaFile)}
+                                      className="w-full h-full object-cover"
+                                    />
+                                    <div className="absolute inset-0 flex items-center justify-center">
+                                      <div className="bg-black/50 rounded-full p-2">
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white" className="w-6 h-6">
+                                          <path fillRule="evenodd" d="M4.5 5.653c0-1.426 1.529-2.33 2.779-1.643l11.54 6.348c1.295.712 1.295 2.573 0 3.285L7.28 19.991c-1.25.687-2.779-.217-2.779-1.643V5.653z" clipRule="evenodd" />
+                                        </svg>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <img
+                                    src={getImageUrl(mediaFile)}
+                                    alt="Média"
+                                    className="w-full h-full object-cover"
+                                  />
+                                )}
+
+                                {/* Indicateur s'il y a plus de médias */}
+                                {mediaFiles.length > 4 && index === 3 && (
+                                  <div className="absolute inset-0 bg-black/50 flex items-center justify-center text-white text-xl font-bold">
+                                    +{mediaFiles.length - 4}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div>
+                      <div className="flex items-center space-x-2 mb-2">
+                        <img
+                          src={tweet.originalPost?.user?.avatar ? getImageUrl(tweet.originalPost.user.avatar) : '/default_pp.webp'}
+                          alt={tweet.originalPost?.user?.name || 'Avatar'}
+                          className="w-6 h-6 rounded-full"
+                          onClick={() => tweet.originalPost?.user?.id && onUserProfileClick?.(tweet.originalPost.user.id)}
+                        />
+                        <div>
+                          <span className="font-medium text-gray-900 dark:text-white">
+                            {tweet.originalPost?.user?.name}
+                          </span>
+                          <span className="text-gray-500 ml-1">@{tweet.originalPost?.user?.mention}</span>
+                        </div>
+                      </div>
+                      <div className="text-gray-800 dark:text-gray-200">
+                        {formatContentWithLinks(tweet.originalPost.content, handleHashtagClick, handleMentionClick)}
+                      </div>
+                      {tweet.originalPost?.mediaUrl && (
+                        <div className="mt-2 grid gap-2 rounded-lg overflow-hidden"
+                          style={tweet.originalPost?.mediaUrl ? getMediaGridLayout(tweet.originalPost.mediaUrl.split(',').filter(Boolean).slice(0, 4).length) : {}}>
+                          {tweet.originalPost?.mediaUrl?.split(',').filter(Boolean).slice(0, 4).map((mediaFile, index) => {
+                            const isVideo = mediaFile.match(/\.(mp4|webm|ogg)$/i);
+                            const mediaFiles = tweet.originalPost?.mediaUrl?.split(',').filter(Boolean) || [];
+                            const mediaStyle = getMediaItemStyle(Math.min(mediaFiles.length, 4), index);
+
+                            return (
+                              <div
+                                key={index}
+                                style={mediaStyle}
+                                className="relative rounded-lg overflow-hidden cursor-pointer group border-1 border-gray-300 hover:border-black transition-all duration-200"
+                                onClick={() => openMediaOverlay(index)}
+                              >
+                                {isVideo ? (
+                                  <div className="relative aspect-video">
+                                    <video
+                                      src={getImageUrl(mediaFile)}
+                                      className="w-full h-full object-cover"
+                                    />
+                                    <div className="absolute inset-0 flex items-center justify-center">
+                                      <div className="bg-black/50 rounded-full p-2">
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white" className="w-6 h-6">
+                                          <path fillRule="evenodd" d="M4.5 5.653c0-1.426 1.529-2.33 2.779-1.643l11.54 6.348c1.295.712 1.295 2.573 0 3.285L7.28 19.991c-1.25.687-2.779-.217-2.779-1.643V5.653z" clipRule="evenodd" />
+                                        </svg>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <img
+                                    src={getImageUrl(mediaFile)}
+                                    alt="Média"
+                                    className="w-full h-full object-cover"
+                                  />
+                                )}
+
+                                {/* Indicateur s'il y a plus de médias */}
+                                {mediaFiles.length > 4 && index === 3 && (
+                                  <div className="absolute inset-0 bg-black/50 flex items-center justify-center text-white text-xl font-bold">
+                                    +{mediaFiles.length - 4}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-            {currentTweet.mediaUrl && (
+            {/* Afficher les médias seulement si ce n'est pas un retweet */}
+            {currentTweet.mediaUrl && !tweet.isRetweet && (
               <div
                 className="mt-2 grid gap-2 rounded-lg overflow-hidden"
                 style={getMediaGridLayout(displayedMediaFiles.length)}
@@ -1104,12 +1279,12 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
                 {/* NOUVEAU Bouton de retweet */}
                 <button
                   onClick={handleRetweetClick}
-                  className={`flex items-center space-x-2 cursor-pointer group ${isRetweeted ? 'text-green-600' : 'text-gray-500 hover:text-green-600'} ${isBlockedByAuthor || isRetweeted || (user?.id === currentTweet.user?.id) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  className={`flex items-center space-x-2 cursor-pointer group ${isRetweeted ? 'text-orange' : 'text-gray-500 hover:text-orange'} ${isBlockedByAuthor || isRetweeted || (user?.id === currentTweet.user?.id) ? 'opacity-50 cursor-not-allowed' : ''}`}
                   disabled={isBlockedByAuthor || isRetweeted || (user?.id === currentTweet.user?.id)}
                   title={isBlockedByAuthor ? "Vous ne pouvez pas interagir avec ce post" : isRetweeted ? "Vous avez déjà retweeté ce post" : (user?.id === currentTweet.user?.id) ? "Vous ne pouvez pas repartager votre propre post" : "Repartager"}
                 >
                   <svg
-                    className={`h-5 w-5 fill-none ${isRetweeted ? 'stroke-green-600' : 'group-hover:stroke-green-600'}`}
+                    className={`h-5 w-5 fill-none ${isRetweeted ? 'stroke-orange' : 'group-hover:stroke-orange'}`}
                     viewBox="0 0 24 24"
                     stroke="currentColor"
                   >
@@ -1117,11 +1292,10 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       strokeWidth={2}
-                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                    />
+                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                   </svg>
                   {retweets > 0 && (
-                    <span className={`ml-1 ${isRetweeted ? 'text-green-600' : 'text-gray-500 group-hover:text-green-600'}`}>
+                    <span className={`ml-1 ${isRetweeted ? 'text-orange' : 'text-gray-500 group-hover:text-orange'}`}>
                       {retweets}
                     </span>
                   )}
@@ -1422,7 +1596,7 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
                           <div
                             key={index}
                             style={mediaStyle}
-                            className="relative rounded-lg overflow-hidden border border-gray-200"
+                            className="relative rounded-lg overflow-hidden border-2 border-orange/40 hover:border-orange transition-all duration-200"
                           >
                             {isVideo ? (
                               <>

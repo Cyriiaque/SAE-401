@@ -46,6 +46,8 @@ export default function PostModal({
     const maxLength = 280;
     const maxMediaCount = 10;
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const [isDeleting, setIsDeleting] = useState(false);
+    const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
     // Obtenir le titre de la modal selon le mode
     const getModalTitle = () => {
@@ -1037,73 +1039,33 @@ export default function PostModal({
         }
     };
 
-    const handleRemoveMedia = (index: number) => {
-        try {
-            // Vérifier si l'index est valide
-            if (index < 0 || index >= mediaPreviews.length) {
-                return;
-            }
+    const handleRemoveMedia = (mediaFilename: string) => {
+        if (isDeleting) return;
 
-            // Mise à jour synchronisée de tous les tableaux
-            // Approche en deux temps: copie puis mise à jour d'état
+        if (existingMediaUrls.some(url => url === mediaFilename)) {
+            // Supprimer le fichier du tableau d'aperçu local
+            setExistingMediaUrls(prevUrls => prevUrls.filter(url => url !== mediaFilename));
+        } else {
+            // Marquer le fichier existant à supprimer lors de la soumission
+            setMediaToDelete(prev => [...prev, mediaFilename]);
 
-            if (index < existingMediaUrls.length) {
-                // C'est un média existant
+            // Si c'est un mode d'édition, tenter de supprimer le fichier immédiatement
+            setIsDeleting(true);
+            deleteMediaFile(mediaFilename).catch((error) => {
+                // Annuler la suppression si elle échoue
+                setMediaToDelete(prev => prev.filter(item => item !== mediaFilename));
 
-                // Récupérer le nom du fichier à supprimer
-                const mediaFilename = existingMediaUrls[index];
-
-                // Ajouter le fichier à la liste des fichiers à supprimer plus tard
-                setMediaToDelete(prev => [...prev, mediaFilename]);
-
-                const newExistingUrls = [...existingMediaUrls];
-                newExistingUrls.splice(index, 1);
-
-                // Mise à jour des trois états importants
-                setExistingMediaUrls(newExistingUrls);
-                setMediaPreviews(prev => {
-                    const newPreviews = [...prev];
-                    newPreviews.splice(index, 1);
-                    return newPreviews;
-                });
-                setMediaTypes(prev => {
-                    const newTypes = [...prev];
-                    newTypes.splice(index, 1);
-                    return newTypes;
-                });
-
-                // Appeler la fonction pour supprimer le fichier du serveur
-                deleteMediaFile(mediaFilename).catch(() => {
-                    // Ignorer les erreurs de suppression pour éviter de bloquer le flux
-                });
-            } else {
-                // C'est un nouveau média
-                const newIndex = index - existingMediaUrls.length;
-
-                // Libérer le blob URL pour éviter les fuites de mémoire
-                const previewUrl = mediaPreviews[index];
-                if (previewUrl.startsWith('blob:')) {
-                    URL.revokeObjectURL(previewUrl);
+                // Afficher un message d'erreur approprié
+                if (error instanceof Error && error.message.includes('reposts')) {
+                    setErrorMessage(error.message);
+                } else {
+                    setErrorMessage("Erreur lors de la suppression du média.");
                 }
 
-                const newMedia = [...media];
-                newMedia.splice(newIndex, 1);
-
-                // Mise à jour des trois états importants
-                setMedia(newMedia);
-                setMediaPreviews(prev => {
-                    const newPreviews = [...prev];
-                    newPreviews.splice(index, 1);
-                    return newPreviews;
-                });
-                setMediaTypes(prev => {
-                    const newTypes = [...prev];
-                    newTypes.splice(index, 1);
-                    return newTypes;
-                });
-            }
-        } catch (error) {
-            // Ignorer les erreurs pour éviter de bloquer l'interface
+                setTimeout(() => setErrorMessage(null), 5000);
+            }).finally(() => {
+                setIsDeleting(false);
+            });
         }
     };
 
@@ -1169,25 +1131,11 @@ export default function PostModal({
                     allMediaUrls.length > 0 ? allMediaUrls : undefined
                 );
 
-                // Supprimer les médias qui ne sont plus utilisés
-                if (mediaToDelete.length > 0) {
-                    for (const mediaUrl of mediaToDelete) {
-                        try {
-                            // Extraire le nom du fichier de l'URL
-                            const filename = mediaUrl.includes('/')
-                                ? mediaUrl.split('/').pop() || mediaUrl
-                                : mediaUrl;
+                // Important: Nous ne supprimons plus les fichiers médias retirés du post
+                // Cela permet aux reposts de continuer à y accéder
+                // Les fichiers seront conservés sur le serveur même s'ils ne sont plus utilisés dans ce post
+                console.log(`Médias retirés du post (${mediaToDelete.length}) non supprimés pour préserver les reposts`);
 
-                            await deleteMediaFile(filename);
-                        } catch (error) {
-                            // Ne pas bloquer le processus si la suppression échoue
-                        }
-                    }
-                }
-
-                if (onPostUpdated) {
-                    onPostUpdated(updatedTweet);
-                }
             } else {
                 // Mode création: Créer un nouveau post
                 const newTweet = await createPost(
@@ -1204,6 +1152,7 @@ export default function PostModal({
             handleModalClose();
         } catch (error) {
             // Afficher l'erreur à l'utilisateur
+            console.error('Erreur lors de la soumission du post:', error);
             alert(error instanceof Error ? error.message : 'Une erreur est survenue lors de la soumission');
         } finally {
             setIsSubmitting(false);
@@ -1465,7 +1414,7 @@ export default function PostModal({
                                             type="button"
                                             onClick={(e) => {
                                                 e.stopPropagation(); // Empêcher la propagation des événements
-                                                handleRemoveMedia(index);
+                                                handleRemoveMedia(preview);
                                             }}
                                             className={`
                                                 absolute 

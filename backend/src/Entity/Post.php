@@ -24,7 +24,7 @@ class Post
     private ?\DateTimeInterface $created_at = null;
 
     #[ORM\ManyToOne(targetEntity: User::class)]
-    private ?user $user = null;
+    private ?User $user = null;
 
     #[ORM\Column(type: 'boolean', options: ['default' => false])]
     private ?bool $isCensored = false;
@@ -33,15 +33,23 @@ class Post
     private ?bool $isPinned = false;
 
     #[ORM\ManyToOne(targetEntity: self::class)]
-    #[ORM\JoinColumn(nullable: true)]
+    #[ORM\JoinColumn(nullable: true, onDelete: "SET NULL")]
     private ?self $originalPost = null;
 
     #[ORM\Column(type: 'integer', options: ['default' => 0])]
     private ?int $retweetCount = 0;
 
+    /**
+     * Relation vers l'utilisateur qui a créé le post original du retweet
+     * Ceci est différent de retweetedBy qui représentait l'utilisateur qui a fait le retweet
+     * originalUser représente l'utilisateur propriétaire du post original
+     */
     #[ORM\ManyToOne(targetEntity: User::class)]
-    #[ORM\JoinColumn(nullable: true)]
-    private ?User $retweetedBy = null;
+    #[ORM\JoinColumn(name: "original_user_id", nullable: true)]
+    private ?User $originalUser = null;
+
+    #[ORM\Column(length: 280, nullable: true)]
+    private ?string $retweeted_content = null;
 
     public function getId(): ?int
     {
@@ -79,12 +87,12 @@ class Post
         return $this;
     }
 
-    public function getIdUser(): ?user
+    public function getIdUser(): ?User
     {
         return $this->user;
     }
 
-    public function setIdUser(?user $user): static
+    public function setIdUser(?User $user): static
     {
         $this->user = $user;
 
@@ -162,17 +170,65 @@ class Post
 
     public function getRetweetedBy(): ?User
     {
-        return $this->retweetedBy;
+        return $this->originalUser;
     }
 
     public function setRetweetedBy(?User $retweetedBy): static
     {
-        $this->retweetedBy = $retweetedBy;
+        $this->originalUser = $retweetedBy;
         return $this;
     }
 
     public function isRetweet(): bool
     {
-        return $this->originalPost !== null;
+        return $this->originalPost !== null || $this->originalUser !== null || $this->retweeted_content !== null;
+    }
+
+    public function getRetweetedContent(): ?string
+    {
+        return $this->retweeted_content;
+    }
+
+    public function setRetweetedContent(?string $retweeted_content): static
+    {
+        $this->retweeted_content = $retweeted_content;
+        return $this;
+    }
+
+    public function saveOriginalPostData(): void
+    {
+        if (!$this->originalPost) {
+            return;
+        }
+
+        $this->retweeted_content = $this->originalPost->getContent();
+
+        if (!$this->mediaUrl && $this->originalPost->getMediaUrl()) {
+            $this->mediaUrl = $this->originalPost->getMediaUrl();
+        }
+
+        // S'assurer que l'information de l'utilisateur original est préservée
+        if ($this->originalPost->getIdUser() && !$this->originalUser) {
+            $this->originalUser = $this->originalPost->getIdUser();
+        }
+    }
+
+    /**
+     * Récupère l'utilisateur propriétaire du post original qui a été retweeté.
+     * À utiliser à la place de getRetweetedBy qui est maintenu pour compatibilité.
+     */
+    public function getOriginalUser(): ?User
+    {
+        return $this->originalUser;
+    }
+
+    /**
+     * Définit l'utilisateur propriétaire du post original qui a été retweeté.
+     * À utiliser à la place de setRetweetedBy qui est maintenu pour compatibilité.
+     */
+    public function setOriginalUser(?User $originalUser): static
+    {
+        $this->originalUser = $originalUser;
+        return $this;
     }
 }

@@ -20,6 +20,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use App\Entity\UserInteraction;
 use App\Entity\Post;
 use App\Entity\User;
+use App\Repository\UserRepository;
 
 class PostController extends AbstractController
 {
@@ -333,13 +334,13 @@ class PostController extends AbstractController
         // Ajouter les informations sur le post original et l'utilisateur qui a retweeté
         if ($post->isRetweet()) {
             $originalPost = $post->getOriginalPost();
-            $retweetedBy = $post->getRetweetedBy();
+            $originalUser = $post->getOriginalUser();
 
             if ($originalPost) {
                 $postData['originalPost'] = [
                     'id' => $originalPost->getId(),
-                    'content' => $originalPost->getContent(),
-                    'mediaUrl' => $originalPost->getMediaUrl(),
+                    'content' => $post->getRetweetedContent() ?? $originalPost->getContent(), // Priorité au contenu sauvegardé
+                    'mediaUrl' => $post->getMediaUrl(), // Utiliser le média du retweet qui est une copie de l'original
                     'created_at' => $originalPost->getCreatedAt()->format('Y-m-d H:i:s'),
                     'user' => $originalPost->getIdUser() ? [
                         'id' => $originalPost->getIdUser()->getId(),
@@ -349,12 +350,29 @@ class PostController extends AbstractController
                     ] : null
                 ];
             }
+            // Si le post original a été supprimé, mais que nous avons son contenu sauvegardé
+            else if ($post->getRetweetedContent() !== null) {
+                $postData['originalPost'] = [
+                    'id' => null, // L'ID n'existe plus
+                    'content' => $post->getRetweetedContent(),
+                    'mediaUrl' => $post->getMediaUrl(), // Utiliser le mediaUrl du retweet (qui a été copié du post original)
+                    'created_at' => null, // Nous n'avons pas la date sauvegardée
+                    'user' => $originalUser ? [
+                        'id' => $originalUser->getId(),
+                        'name' => $originalUser->getName(),
+                        'mention' => $originalUser->getMention(),
+                        'avatar' => $originalUser->getAvatar()
+                    ] : null,
+                    'deleted' => true // Indiquer que le post original a été supprimé
+                ];
+            }
 
-            if ($retweetedBy) {
-                $postData['retweetedBy'] = [
-                    'id' => $retweetedBy->getId(),
-                    'name' => $retweetedBy->getName(),
-                    'mention' => $retweetedBy->getMention()
+            if ($originalUser) {
+                $postData['originalUser'] = [
+                    'id' => $originalUser->getId(),
+                    'name' => $originalUser->getName(),
+                    'mention' => $originalUser->getMention(),
+                    'avatar' => $originalUser->getAvatar()
                 ];
             }
         }
@@ -387,6 +405,29 @@ class PostController extends AbstractController
             $originalPost = $post->getOriginalPost();
             $originalPost->decrementRetweetCount();
             $entityManager->persist($originalPost);
+        }
+        // Si c'est un post original qui a été retweeté, sauvegarder les données pour les retweets
+        else if ($post->getRetweetCount() > 0) {
+            // Trouver tous les retweets qui référencent ce post
+            $retweets = $postRepository->findBy(['originalPost' => $post]);
+
+            // Pour chaque retweet, sauvegarder les informations du post original
+            foreach ($retweets as $retweet) {
+                // Sauvegarder le contenu et le mediaUrl du post original
+                $retweet->saveOriginalPostData();
+
+                // S'assurer que originalUser est défini si ce n'est pas déjà le cas
+                if (!$retweet->getOriginalUser() && $post->getIdUser()) {
+                    $retweet->setOriginalUser($post->getIdUser());
+                }
+
+                // Détacher le retweet du post original
+                $retweet->setOriginalPost(null);
+
+                $entityManager->persist($retweet);
+            }
+            // Flush ici pour sauvegarder les changements avant de supprimer le post original
+            $entityManager->flush();
         }
 
         // Supprimer d'abord toutes les interactions associées au post
@@ -437,10 +478,25 @@ class PostController extends AbstractController
 
         // Mise à jour des médias si présents
         if (isset($data['mediaUrls']) && is_array($data['mediaUrls']) && count($data['mediaUrls']) <= 10) {
-            $post->setMediaUrl(implode(',', $data['mediaUrls']));
-        }
+            // Mémoriser les médias actuels pour la mise à jour des retweets
+            $currentMediaUrl = $post->getMediaUrl();
 
-        $entityManager->flush();
+            // Mettre à jour le post avec les nouveaux médias
+            $post->setMediaUrl(implode(',', $data['mediaUrls']));
+
+            // Enregistrer les changements pour ce post
+            $entityManager->flush();
+
+            // Mettre à jour les retweets qui pointent vers ce post
+            if ($currentMediaUrl !== $post->getMediaUrl()) {
+                // Ne pas mettre à jour les médias des retweets - ils conservent leur "instantané" du post original
+                // Les modifications du post original n'affectent pas les retweets existants
+                // car les retweets contiennent déjà une copie du contenu et des médias
+            }
+        } else {
+            // Juste enregistrer les changements si pas de mise à jour des médias
+            $entityManager->flush();
+        }
 
         // Récupérer le nombre de likes
         $totalLikes = $interactionRepository->count(['post' => $post, 'liked' => true]);
@@ -540,6 +596,7 @@ class PostController extends AbstractController
         Request $request,
         PostRepository $postRepository,
         EntityManagerInterface $entityManager,
+        UserRepository $userRepository,
         #[CurrentUser] User $currentUser
     ): JsonResponse {
         // Récupérer le post original
@@ -558,9 +615,15 @@ class PostController extends AbstractController
             return $this->json(['message' => 'Vous ne pouvez pas repartager votre propre post'], Response::HTTP_BAD_REQUEST);
         }
 
+        // Vérifier si l'utilisateur est bloqué par l'auteur du post
+        $isBlocked = $userRepository->isUserBlockedBy($currentUser->getId(), $originalPost->getIdUser()->getId());
+        if ($isBlocked) {
+            return $this->json(['message' => 'Vous ne pouvez pas repartager le post d\'un utilisateur qui vous a bloqué'], Response::HTTP_FORBIDDEN);
+        }
+
         // Vérifier s'il existe déjà un retweet du même post par cet utilisateur
         $existingRetweet = $postRepository->findOneBy([
-            'retweetedBy' => $currentUser,
+            'user' => $currentUser,
             'originalPost' => $originalPost
         ]);
 
@@ -576,13 +639,21 @@ class PostController extends AbstractController
         $retweet = new Post();
         $retweet->setContent($content);
         $retweet->setOriginalPost($originalPost);
-        $retweet->setRetweetedBy($currentUser);
+        $retweet->setOriginalUser($originalPost->getIdUser()); // Stocker l'utilisateur original
         $retweet->setIdUser($currentUser); // L'utilisateur qui retweet devient le propriétaire
         $retweet->setCreatedAt(new \DateTimeImmutable());
 
-        // Copier le mediaUrl si présent
+        // Stocker le contenu du post original dans le champ retweeted_content
+        $retweet->setRetweetedContent($originalPost->getContent());
+
+        // Copier le mediaUrl du post original dans le retweet
         if ($originalPost->getMediaUrl()) {
             $retweet->setMediaUrl($originalPost->getMediaUrl());
+        }
+
+        // Si le champ content est vide, utilisez le contenu du post original
+        if (empty($content)) {
+            $retweet->setContent('');  // Laisser le content vide au lieu de copier le contenu du post original
         }
 
         // Incrémenter le compteur de retweets du post original
@@ -605,12 +676,19 @@ class PostController extends AbstractController
                 'id' => $originalPost->getId(),
                 'content' => $originalPost->getContent(),
                 'mediaUrl' => $originalPost->getMediaUrl(),
-                'created_at' => $originalPost->getCreatedAt()->format('Y-m-d H:i:s')
+                'created_at' => $originalPost->getCreatedAt()->format('Y-m-d H:i:s'),
+                'user' => $originalPost->getIdUser() ? [
+                    'id' => $originalPost->getIdUser()->getId(),
+                    'name' => $originalPost->getIdUser()->getName(),
+                    'mention' => $originalPost->getIdUser()->getMention(),
+                    'avatar' => $originalPost->getIdUser()->getAvatar()
+                ] : null
             ],
-            'retweetedBy' => [
-                'id' => $currentUser->getId(),
-                'name' => $currentUser->getName(),
-                'mention' => $currentUser->getMention()
+            'originalUser' => [
+                'id' => $originalPost->getIdUser()->getId(),
+                'name' => $originalPost->getIdUser()->getName(),
+                'mention' => $originalPost->getIdUser()->getMention(),
+                'avatar' => $originalPost->getIdUser()->getAvatar()
             ],
             'user' => [
                 'id' => $currentUser->getId(),
@@ -638,7 +716,7 @@ class PostController extends AbstractController
 
         // Vérifier si l'utilisateur a retweeté ce post
         $hasRetweeted = $postRepository->findOneBy([
-            'retweetedBy' => $currentUser,
+            'user' => $currentUser,
             'originalPost' => $post
         ]) !== null;
 
@@ -665,22 +743,45 @@ class PostController extends AbstractController
         // Ajouter les informations sur le post original et l'utilisateur qui a retweeté
         if ($post->isRetweet()) {
             $originalPost = $post->getOriginalPost();
-            $retweetedBy = $post->getRetweetedBy();
+            $originalUser = $post->getOriginalUser();
 
             if ($originalPost) {
                 $postData['originalPost'] = [
                     'id' => $originalPost->getId(),
-                    'content' => $originalPost->getContent(),
-                    'mediaUrl' => $originalPost->getMediaUrl(),
-                    'created_at' => $originalPost->getCreatedAt()->format('Y-m-d H:i:s')
+                    'content' => $post->getRetweetedContent() ?? $originalPost->getContent(), // Priorité au contenu sauvegardé
+                    'mediaUrl' => $post->getMediaUrl(), // Utiliser le média du retweet qui est une copie de l'original
+                    'created_at' => $originalPost->getCreatedAt()->format('Y-m-d H:i:s'),
+                    'user' => $originalPost->getIdUser() ? [
+                        'id' => $originalPost->getIdUser()->getId(),
+                        'name' => $originalPost->getIdUser()->getName(),
+                        'mention' => $originalPost->getIdUser()->getMention(),
+                        'avatar' => $originalPost->getIdUser()->getAvatar()
+                    ] : null
+                ];
+            }
+            // Si le post original a été supprimé, mais que nous avons son contenu sauvegardé
+            else if ($post->getRetweetedContent() !== null) {
+                $postData['originalPost'] = [
+                    'id' => null, // L'ID n'existe plus
+                    'content' => $post->getRetweetedContent(),
+                    'mediaUrl' => $post->getMediaUrl(), // Utiliser le mediaUrl du retweet (qui a été copié du post original)
+                    'created_at' => null, // Nous n'avons pas la date sauvegardée
+                    'user' => $originalUser ? [
+                        'id' => $originalUser->getId(),
+                        'name' => $originalUser->getName(),
+                        'mention' => $originalUser->getMention(),
+                        'avatar' => $originalUser->getAvatar()
+                    ] : null,
+                    'deleted' => true // Indiquer que le post original a été supprimé
                 ];
             }
 
-            if ($retweetedBy) {
-                $postData['retweetedBy'] = [
-                    'id' => $retweetedBy->getId(),
-                    'name' => $retweetedBy->getName(),
-                    'mention' => $retweetedBy->getMention()
+            if ($originalUser) {
+                $postData['originalUser'] = [
+                    'id' => $originalUser->getId(),
+                    'name' => $originalUser->getName(),
+                    'mention' => $originalUser->getMention(),
+                    'avatar' => $originalUser->getAvatar()
                 ];
             }
         }
@@ -741,7 +842,7 @@ class PostController extends AbstractController
         // Filtrer les posts pour n'inclure que les posts originaux et les retweets faits par l'utilisateur du profil
         $filteredPosts = array_filter($posts, function ($post) use ($targetUser) {
             // Inclure si ce n'est pas un retweet OU si c'est un retweet fait par l'utilisateur du profil
-            return !$post->isRetweet() || ($post->isRetweet() && $post->getRetweetedBy() && $post->getRetweetedBy()->getId() === $targetUser->getId());
+            return !$post->isRetweet() || ($post->isRetweet() && $post->getIdUser() && $post->getIdUser()->getId() === $targetUser->getId());
         });
 
         $formattedPosts = [];

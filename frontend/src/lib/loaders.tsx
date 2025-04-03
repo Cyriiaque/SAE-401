@@ -54,24 +54,25 @@ export interface Tweet {
     isPinned?: boolean;
     retweets?: number; // Nombre de retweets
     isRetweet?: boolean; // Si c'est un retweet
-    originalTweet?: Tweet; // Le tweet original si c'est un retweet
     originalPost?: { // Le post original retourné par l'API
-        id: number;
+        id: number | null;
         content: string;
         mediaUrl?: string | null;
-        created_at: string;
+        created_at: string | null;
+        deleted?: boolean; // Indique si le post original a été supprimé
         user?: {
             id: number;
             name: string;
             mention: string;
             avatar: string | null;
-        };
+        } | null;
     };
-    retweetedBy?: {
+    originalUser?: {
         id: number;
         name: string;
         mention: string;
-    }; // L'utilisateur qui a retweeté
+        avatar: string | null;
+    }; // L'utilisateur qui a créé le post original (auteur du tweet original)
     user: {
         id: number;
         email: string;
@@ -381,16 +382,12 @@ export async function deletePost(postId: number): Promise<void> {
 
         // Si on ne peut pas récupérer les infos du post, on continue quand même avec la suppression
         let mediaUrls: string[] = [];
-        let isRetweet: boolean = false;
 
         if (postInfoResponse.ok) {
             const postData = await postInfoResponse.json();
             console.log("Données récupérées pour le post à supprimer:", postData);
 
-            // Vérifier si le post est un retweet
-            isRetweet = postData.isRetweet || !!postData.retweetedBy;
-
-            // La nouvelle API renvoie directement l'objet post
+            // Récupérer les médias du post
             if (postData && postData.mediaUrl) {
                 mediaUrls = postData.mediaUrl.split(',').filter(Boolean);
                 console.log(`Post à supprimer contient ${mediaUrls.length} fichiers médias:`, mediaUrls);
@@ -429,9 +426,9 @@ export async function deletePost(postId: number): Promise<void> {
 
         console.log(`Post ${postId} supprimé avec succès`);
 
-        // Étape 3: Nettoyer les fichiers médias du post SEULEMENT si ce n'est pas un retweet
-        if (mediaUrls.length > 0 && !isRetweet) {
-            console.log(`Suppression des ${mediaUrls.length} fichiers médias associés au post ${postId}...`);
+        // Étape 3: Pour chaque média, vérifier s'il est utilisé par d'autres posts avant de le supprimer
+        if (mediaUrls.length > 0) {
+            console.log(`Vérification des ${mediaUrls.length} fichiers médias associés au post ${postId}...`);
 
             // Pour chaque média, extraire seulement le nom du fichier (sans le chemin)
             const cleanMediaUrls = mediaUrls.map(url => {
@@ -446,24 +443,39 @@ export async function deletePost(postId: number): Promise<void> {
 
             console.log("URLs des médias nettoyées:", cleanMediaUrls);
 
-            const deletionPromises = cleanMediaUrls.map(filename =>
-                deleteMediaFile(filename)
-                    .then(() => console.log(`Fichier ${filename} supprimé avec succès`))
-                    .catch(error => console.error(`Erreur lors de la suppression du fichier ${filename}:`, error))
-            );
+            // Vérifier chaque média un par un
+            for (const filename of cleanMediaUrls) {
+                try {
+                    // Vérifier si d'autres posts utilisent ce média
+                    const checkResponse = await fetch(`${API_BASE_URL}/media/check-usage?filename=${filename}`, {
+                        method: 'GET',
+                        headers: {
+                            'Authorization': `Bearer ${token}`
+                        }
+                    });
 
-            try {
-                await Promise.all(deletionPromises);
-                console.log(`Tous les fichiers du post ${postId} ont été supprimés`);
-            } catch (e) {
-                console.error(`Certains fichiers du post ${postId} n'ont pas pu être supprimés:`, e);
+                    if (checkResponse.ok) {
+                        const usageData = await checkResponse.json();
+
+                        // Si ce média n'est plus utilisé par aucun post, le supprimer
+                        if (usageData.count === 0) {
+                            console.log(`Le média ${filename} n'est plus utilisé par aucun post, suppression...`);
+                            await deleteMediaFile(filename);
+                            console.log(`Fichier ${filename} supprimé avec succès`);
+                        } else {
+                            console.log(`Le média ${filename} est encore utilisé par ${usageData.count} post(s), conservation du fichier.`);
+                        }
+                    } else {
+                        // En cas d'erreur lors de la vérification, on tente de supprimer le fichier par sécurité
+                        console.warn(`Impossible de vérifier l'utilisation du média ${filename}, suppression par défaut...`);
+                        await deleteMediaFile(filename);
+                    }
+                } catch (error) {
+                    console.error(`Erreur lors de la vérification/suppression du fichier ${filename}:`, error);
+                }
             }
         } else {
-            if (isRetweet) {
-                console.log(`Le post ${postId} est un retweet, les médias ne seront pas supprimés`);
-            } else {
-                console.log(`Le post ${postId} ne contenait pas de médias à supprimer`);
-            }
+            console.log(`Le post ${postId} ne contenait pas de médias à supprimer`);
         }
     } catch (error) {
         console.error(`Erreur lors de la suppression du post ${postId}:`, error);
@@ -683,9 +695,10 @@ export async function uploadImage(file: File, type: 'avatar' | 'banner' | 'post'
 /**
  * Supprime un fichier média du serveur
  * @param filename Nom du fichier à supprimer
+ * @param checkRepostsUsage Si true, vérifie d'abord si le média est utilisé par des reposts
  * @returns Promise qui se résout quand la suppression est terminée
  */
-export async function deleteMediaFile(filename: string): Promise<void> {
+export async function deleteMediaFile(filename: string, checkRepostsUsage: boolean = true): Promise<void> {
     // Vérifier que le nom de fichier n'est pas vide
     if (!filename || filename.trim() === '') {
         console.error('Tentative de suppression avec un nom de fichier vide');
@@ -694,6 +707,7 @@ export async function deleteMediaFile(filename: string): Promise<void> {
 
     const token = localStorage.getItem('token');
     if (!token) {
+        logout();
         throw new Error('Non authentifié');
     }
 
@@ -702,6 +716,36 @@ export async function deleteMediaFile(filename: string): Promise<void> {
 
     try {
         console.log(`Demande de suppression du fichier: ${cleanFilename}`);
+
+        // Si on doit vérifier l'utilisation par des reposts
+        if (checkRepostsUsage) {
+            try {
+                // Vérifier si d'autres posts utilisent ce média
+                const checkResponse = await fetch(`${API_BASE_URL}/media/check-usage?filename=${cleanFilename}`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (checkResponse.ok) {
+                    const usageData = await checkResponse.json();
+
+                    // Si ce média est utilisé par plus d'un post, ne pas le supprimer
+                    if (usageData.count > 1) {
+                        console.log(`Le média ${cleanFilename} est utilisé par ${usageData.count} posts, suppression annulée.`);
+                        throw new Error(`Le média ne peut pas être supprimé car il est utilisé par ${usageData.count - 1} autres posts, y compris des reposts.`);
+                    }
+                }
+            } catch (error) {
+                // Si l'erreur provient de notre propre vérification, on la propage
+                if (error instanceof Error && error.message.includes('reposts')) {
+                    throw error;
+                }
+                // Sinon on continue avec la tentative de suppression
+                console.warn(`Impossible de vérifier l'utilisation du média, tentative de suppression directe...`);
+            }
+        }
 
         // Afficher les détails de la requête pour le débogage
         console.log('Requête DELETE envoyée à:', `${API_BASE_URL}/media/delete`);
@@ -744,6 +788,11 @@ export async function deleteMediaFile(filename: string): Promise<void> {
                 return;
             }
 
+            // Vérifier si l'erreur est due à l'utilisation du média par des reposts
+            if (response.status === 400 && errorData.message && errorData.message.includes('reposts')) {
+                throw new Error(`Le média ne peut pas être supprimé car il est utilisé par ${errorData.usageCount - 1} autres posts, y compris des reposts.`);
+            }
+
             throw new Error(errorData.message || 'Erreur lors de la suppression du média');
         }
 
@@ -756,8 +805,7 @@ export async function deleteMediaFile(filename: string): Promise<void> {
         }
     } catch (error) {
         console.error(`Échec de suppression du fichier ${cleanFilename}:`, error);
-        // Ne pas propager l'erreur pour éviter de bloquer le flux principal
-        // si la suppression du média échoue
+        throw error; // Propager l'erreur pour qu'elle puisse être gérée par le composant appelant
     }
 }
 

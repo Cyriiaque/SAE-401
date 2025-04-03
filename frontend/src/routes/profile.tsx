@@ -272,8 +272,8 @@ export default function Profile() {
 
         const handleRetweetCreated = (event: CustomEvent<Tweet>) => {
             const newRetweet = event.detail;
-            // Si l'utilisateur actuel est celui qui a retweeté
-            if (newRetweet.retweetedBy?.id === user?.id) {
+            // Si l'utilisateur actuel est celui qui a créé le retweet
+            if (newRetweet.user?.id === user?.id) {
                 setRegularPosts(prevPosts => [newRetweet, ...prevPosts]);
                 setPosts(prevPosts => [newRetweet, ...prevPosts]);
             }

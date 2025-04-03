@@ -3,6 +3,7 @@
 namespace App\Repository;
 
 use App\Entity\User;
+use App\Entity\UserInteraction;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
 use Symfony\Component\Security\Core\Exception\UnsupportedUserException;
@@ -31,6 +32,31 @@ class UserRepository extends ServiceEntityRepository implements PasswordUpgrader
         $user->setPassword($newHashedPassword);
         $this->getEntityManager()->persist($user);
         $this->getEntityManager()->flush();
+    }
+
+    /**
+     * Vérifie si un utilisateur est bloqué par un autre utilisateur
+     * 
+     * @param int $userId ID de l'utilisateur potentiellement bloqué
+     * @param int $blockerUserId ID de l'utilisateur qui pourrait avoir bloqué
+     * @return bool true si l'utilisateur est bloqué, false sinon
+     */
+    public function isUserBlockedBy(int $userId, int $blockerUserId): bool
+    {
+        $em = $this->getEntityManager();
+        $qb = $em->createQueryBuilder();
+
+        $result = $qb->select('COUNT(ui.id)')
+            ->from(UserInteraction::class, 'ui')
+            ->where('ui.source = :blocker')
+            ->andWhere('ui.target = :blocked')
+            ->andWhere('ui.isBlocked = true')
+            ->setParameter('blocker', $blockerUserId)
+            ->setParameter('blocked', $userId)
+            ->getQuery()
+            ->getSingleScalarResult();
+
+        return $result > 0;
     }
 
     //    /**

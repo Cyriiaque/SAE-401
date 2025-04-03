@@ -155,6 +155,39 @@ class ImagesController extends AbstractController
             ], 404);
         }
 
+        // Vérifier si le fichier est utilisé par des retweets ou d'autres posts
+        $postRepository = $entityManager->getRepository(\App\Entity\Post::class);
+
+        // Compter les posts qui contiennent exactement ce fichier
+        $exactMatches = $postRepository->createQueryBuilder('p')
+            ->select('COUNT(p)')
+            ->where('p.mediaUrl = :exactFilename')
+            ->setParameter('exactFilename', $filename)
+            ->getQuery()
+            ->getSingleScalarResult();
+
+        // Compter les posts qui contiennent ce fichier parmi d'autres
+        $partialMatches = $postRepository->createQueryBuilder('p')
+            ->select('COUNT(p)')
+            ->where('p.mediaUrl LIKE :partialFilename')
+            ->setParameter('partialFilename', '%' . $filename . '%')
+            ->andWhere('p.mediaUrl <> :exactFilename')
+            ->setParameter('exactFilename', $filename)
+            ->getQuery()
+            ->getSingleScalarResult();
+
+        $totalUsage = $exactMatches + $partialMatches;
+
+        // Si le fichier est utilisé ailleurs, ne pas le supprimer
+        if ($totalUsage > 1) { // > 1 car un post peut être le post en cours de modification
+            error_log("Le fichier $filename est utilisé par $totalUsage posts, y compris des retweets. Suppression annulée.");
+            return $this->json([
+                'message' => 'Le fichier ne peut pas être supprimé car il est utilisé par des reposts',
+                'filename' => $filename,
+                'usageCount' => $totalUsage
+            ], 400);
+        }
+
         // Vérifier si le fichier appartient à un utilisateur (pour avatar et banner)
         $isUserMedia = false;
 
@@ -227,6 +260,72 @@ class ImagesController extends AbstractController
                 'message' => 'Erreur lors de la suppression du fichier',
                 'error' => $e->getMessage(),
                 'filepath' => $filePath
+            ], 500);
+        }
+    }
+
+    #[Route('/media/check-usage', name: 'check_media_usage', methods: ['GET'])]
+    #[IsGranted('ROLE_USER')]
+    public function checkMediaUsage(
+        Request $request,
+        EntityManagerInterface $entityManager
+    ): JsonResponse {
+        $filename = $request->query->get('filename');
+
+        if (!$filename) {
+            return $this->json([
+                'message' => 'Le nom du fichier est requis',
+                'count' => 0
+            ], 400);
+        }
+
+        try {
+            // Vérifier si le fichier existe physiquement
+            $publicImagesDir = $this->getParameter('kernel.project_dir') . '/public/images';
+            $filePath = $publicImagesDir . '/' . $filename;
+
+            if (!file_exists($filePath)) {
+                return $this->json([
+                    'message' => 'Le fichier n\'existe pas',
+                    'count' => 0
+                ]);
+            }
+
+            // Compter combien de posts utilisent ce fichier
+            $postRepository = $entityManager->getRepository(\App\Entity\Post::class);
+
+            // Compter les posts qui contiennent exactement ce fichier
+            $exactMatches = $postRepository->createQueryBuilder('p')
+                ->select('COUNT(p)')
+                ->where('p.mediaUrl = :exactFilename')
+                ->setParameter('exactFilename', $filename)
+                ->getQuery()
+                ->getSingleScalarResult();
+
+            // Compter les posts qui contiennent ce fichier parmi d'autres
+            $partialMatches = $postRepository->createQueryBuilder('p')
+                ->select('COUNT(p)')
+                ->where('p.mediaUrl LIKE :partialFilename')
+                ->setParameter('partialFilename', '%' . $filename . '%')
+                ->andWhere('p.mediaUrl <> :exactFilename')
+                ->setParameter('exactFilename', $filename)
+                ->getQuery()
+                ->getSingleScalarResult();
+
+            $totalUsage = $exactMatches + $partialMatches;
+
+            return $this->json([
+                'message' => 'Vérification réussie',
+                'count' => $totalUsage,
+                'details' => [
+                    'exactMatches' => $exactMatches,
+                    'partialMatches' => $partialMatches
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return $this->json([
+                'message' => 'Erreur lors de la vérification: ' . $e->getMessage(),
+                'count' => 0
             ], 500);
         }
     }

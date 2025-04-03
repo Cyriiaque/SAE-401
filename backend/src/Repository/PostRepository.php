@@ -32,7 +32,7 @@ class PostRepository extends ServiceEntityRepository
     {
         return $this->createQueryBuilder('p')
             ->where('p.user = :userId')
-            ->orWhere('p.retweetedBy = :userId')
+            ->orWhere('p.originalUser = :userId')
             ->setParameter('userId', $userId)
             ->orderBy('p.isPinned', 'DESC')
             ->addOrderBy('p.created_at', 'DESC')
