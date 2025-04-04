@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { User, fetchUsers, updateUser, banUser, getImageUrl, fetchAllPosts, Tweet, togglePostCensorship, searchPosts } from '../lib/loaders';
+import { User, fetchUsers, updateUser, banUser, getImageUrl, fetchAllPosts, Tweet, togglePostCensorship, searchPosts, deletePost } from '../lib/loaders';
 import { useNavigate } from 'react-router-dom';
 import Button from '../ui/buttons';
 import { useAuth } from '../contexts/AuthContext';
@@ -31,6 +31,8 @@ export default function Dashboard() {
     const [isSearching, setIsSearching] = useState<boolean>(false);
     const [searchMode, setSearchMode] = useState<boolean>(false);
     const [bannedPostsCount, setBannedPostsCount] = useState(0);
+    const [confirmDeleteModalOpen, setConfirmDeleteModalOpen] = useState(false);
+    const [postToDelete, setPostToDelete] = useState<Tweet | null>(null);
 
     useEffect(() => {
         if (activeTab === 'users') {
@@ -237,6 +239,25 @@ export default function Dashboard() {
         }
     };
 
+    const handleDelete = (postId: number) => {
+        const post = posts.find(p => p.id === postId);
+        if (post) {
+            setPostToDelete(post);
+            setConfirmDeleteModalOpen(true);
+        }
+    };
+
+    const handleDeletePost = async (post: Tweet) => {
+        try {
+            await deletePost(post.id);
+            // Supprimer le post de la liste
+            setPosts(posts.filter(p => p.id !== post.id));
+            setConfirmDeleteModalOpen(false);
+        } catch (error) {
+            console.error('Erreur lors de la suppression:', error);
+        }
+    };
+
     return (
         <div className="flex min-h-screen bg-white">
             <Sidebar />
@@ -257,23 +278,25 @@ export default function Dashboard() {
                     </div>
 
                     {/* Onglets */}
-                    <div className="flex border-b border-gray-200">
-                        <button
-                            className={`py-4 px-6 font-medium text-center ${activeTab === 'users'
-                                ? 'text-orange border-b-2 border-orange'
-                                : 'text-gray-500 hover:text-gray-700'}`}
-                            onClick={() => setActiveTab('users')}
-                        >
-                            Gestion des Utilisateurs
-                        </button>
-                        <button
-                            className={`py-4 px-6 font-medium text-center ${activeTab === 'content'
-                                ? 'text-orange border-b-2 border-orange'
-                                : 'text-gray-500 hover:text-gray-700'}`}
-                            onClick={() => setActiveTab('content')}
-                        >
-                            Gestion des Contenus
-                        </button>
+                    <div className="flex justify-center border-b border-gray-200">
+                        <div className="flex">
+                            <button
+                                className={`py-4 px-6 font-medium text-center ${activeTab === 'users'
+                                    ? 'text-orange border-b-2 border-orange'
+                                    : 'text-gray-500 hover:text-gray-700'}`}
+                                onClick={() => setActiveTab('users')}
+                            >
+                                Gestion des Utilisateurs
+                            </button>
+                            <button
+                                className={`py-4 px-6 font-medium text-center ${activeTab === 'content'
+                                    ? 'text-orange border-b-2 border-orange'
+                                    : 'text-gray-500 hover:text-gray-700'}`}
+                                onClick={() => setActiveTab('content')}
+                            >
+                                Gestion des Contenus
+                            </button>
+                        </div>
                     </div>
 
                     {/* Contenu de l'onglet */}
@@ -519,8 +542,8 @@ export default function Dashboard() {
                                                         className="relative mb-6"
                                                         ref={index === posts.length - 1 ? lastPostElementRef : null}
                                                     >
-                                                        {/* Bouton de censure - version desktop */}
-                                                        <div className="absolute right-4 top-4 z-10 hidden sm:block">
+                                                        {/* Actions de post - version desktop */}
+                                                        <div className="absolute right-4 top-4 z-10 hidden sm:flex space-x-2">
                                                             <Button
                                                                 variant={post.isCensored ? "outline" : "danger"}
                                                                 size="sm"
@@ -544,10 +567,22 @@ export default function Dashboard() {
                                                                     </>
                                                                 )}
                                                             </Button>
+
+                                                            <Button
+                                                                variant="danger"
+                                                                size="sm"
+                                                                onClick={() => handleDelete(post.id)}
+                                                                className="flex items-center space-x-2"
+                                                            >
+                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                                </svg>
+                                                                <span>Supprimer</span>
+                                                            </Button>
                                                         </div>
 
-                                                        {/* Bouton de censure - version mobile */}
-                                                        <div className="sm:hidden">
+                                                        {/* Actions de post - version mobile */}
+                                                        <div className="sm:hidden flex flex-col space-y-2 mb-2">
                                                             <Button
                                                                 variant={post.isCensored ? "outline" : "danger"}
                                                                 size="sm"
@@ -571,11 +606,23 @@ export default function Dashboard() {
                                                                     </>
                                                                 )}
                                                             </Button>
+
+                                                            <Button
+                                                                variant="danger"
+                                                                size="sm"
+                                                                onClick={() => handleDelete(post.id)}
+                                                                className="flex items-center justify-center w-full space-x-2"
+                                                            >
+                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                                </svg>
+                                                                <span>Supprimer</span>
+                                                            </Button>
                                                         </div>
 
                                                         <TweetCard
                                                             tweet={post}
-                                                            onDelete={() => { }}
+                                                            onDelete={handleDelete}
                                                             onPostUpdated={() => { }}
                                                         />
                                                     </div>
@@ -641,6 +688,16 @@ export default function Dashboard() {
                 title={`${postToCensor?.isCensored ? 'Annuler la censure' : 'Censurer'} le post`}
                 message={`Êtes-vous sûr de vouloir ${postToCensor?.isCensored ? 'annuler la censure de' : 'censurer'} ce post ?`}
                 confirmText={postToCensor?.isCensored ? 'Annuler la censure' : 'Censurer'}
+                variant="danger"
+            />
+
+            <ConfirmModal
+                isOpen={confirmDeleteModalOpen}
+                onClose={() => setConfirmDeleteModalOpen(false)}
+                onConfirm={() => handleDeletePost(postToDelete!)}
+                title="Supprimer le post"
+                message="Êtes-vous sûr de vouloir supprimer ce post ? Cette action est irréversible."
+                confirmText="Supprimer"
                 variant="danger"
             />
         </div>
