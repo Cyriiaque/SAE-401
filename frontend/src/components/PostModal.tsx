@@ -37,6 +37,7 @@ export default function PostModal({
         cancel: () => void
     }>>({});
     const [mediaToDelete, setMediaToDelete] = useState<string[]>([]);
+    const [hiddenMediaIndexes, setHiddenMediaIndexes] = useState<number[]>([]);
     const [suggestedUsers, setSuggestedUsers] = useState<User[]>([]);
     const [showUserSuggestions, setShowUserSuggestions] = useState(false);
     const [currentMention, setCurrentMention] = useState('');
@@ -46,8 +47,6 @@ export default function PostModal({
     const maxLength = 280;
     const maxMediaCount = 10;
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const [isDeleting, setIsDeleting] = useState(false);
-    const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
     // Obtenir le titre de la modal selon le mode
     const getModalTitle = () => {
@@ -1039,41 +1038,37 @@ export default function PostModal({
         }
     };
 
-    const handleRemoveMedia = (mediaFilename: string) => {
-        if (isDeleting) return;
+    const handleRemoveMedia = (index: number) => {
+        try {
+            // Vérifier si l'index est valide
+            if (index < 0 || index >= mediaPreviews.length) {
+                return;
+            }
 
-        if (existingMediaUrls.some(url => url === mediaFilename)) {
-            // Supprimer le fichier du tableau d'aperçu local
-            setExistingMediaUrls(prevUrls => prevUrls.filter(url => url !== mediaFilename));
-        } else {
-            // Marquer le fichier existant à supprimer lors de la soumission
-            setMediaToDelete(prev => [...prev, mediaFilename]);
+            // Ajouter l'index à la liste des médias masqués
+            setHiddenMediaIndexes(prev => [...prev, index]);
 
-            // Si c'est un mode d'édition, tenter de supprimer le fichier immédiatement
-            setIsDeleting(true);
-            deleteMediaFile(mediaFilename).catch((error) => {
-                // Annuler la suppression si elle échoue
-                setMediaToDelete(prev => prev.filter(item => item !== mediaFilename));
-
-                // Afficher un message d'erreur approprié
-                if (error instanceof Error && error.message.includes('reposts')) {
-                    setErrorMessage(error.message);
-                } else {
-                    setErrorMessage("Erreur lors de la suppression du média.");
-                }
-
-                setTimeout(() => setErrorMessage(null), 5000);
-            }).finally(() => {
-                setIsDeleting(false);
-            });
+            if (index < existingMediaUrls.length) {
+                // C'est un média existant
+                // Ajouter le fichier à la liste des fichiers à supprimer plus tard
+                const mediaFilename = existingMediaUrls[index];
+                setMediaToDelete(prev => [...prev, mediaFilename]);
+                // Note: On ne supprime pas immédiatement de existingMediaUrls
+            } else {
+                // C'est un nouveau média
+                // Note: On ne supprime pas immédiatement de media
+            }
+        } catch (error) {
+            // Ignorer les erreurs pour éviter de bloquer l'interface
         }
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
-        // Vérifier si le contenu est vide et s'il n'y a pas de média
-        if (!content.trim() && media.length === 0 && existingMediaUrls.length === 0) {
+        // Vérifier si le contenu est vide et s'il n'y a pas de média visible
+        const visibleMediaCount = media.length + existingMediaUrls.length - hiddenMediaIndexes.length;
+        if (!content.trim() && visibleMediaCount === 0) {
             return;
         }
 
@@ -1085,21 +1080,26 @@ export default function PostModal({
         setIsSubmitting(true);
 
         try {
+            // Appliquer les suppressions de médias maintenant
+            // 1. Filtrer les médias existants
+            const filteredExistingMediaUrls = existingMediaUrls.filter((_, index) =>
+                !hiddenMediaIndexes.includes(index));
+
+            // 2. Filtrer les nouveaux médias (ceux qui sont après existingMediaUrls.length)
+            const adjustedMediaIndexes = hiddenMediaIndexes
+                .filter(index => index >= existingMediaUrls.length)
+                .map(index => index - existingMediaUrls.length);
+
+            const filteredMedia = media.filter((_, index) =>
+                !adjustedMediaIndexes.includes(index));
+
             // Télécharger les nouveaux médias
             const uploadedMediaUrls: string[] = [];
 
-            // Stocker les URLs des médias existants qui ne sont pas supprimés
-            let retainedExistingMediaUrls: string[] = [];
-
-            if (mode === 'edit' && existingMediaUrls.length > 0) {
-                // Identifier les médias existants conservés
-                retainedExistingMediaUrls = existingMediaUrls.filter(url => !mediaToDelete.includes(url));
-            }
-
             // Upload des nouveaux médias si présents
-            if (media.length > 0) {
+            if (filteredMedia.length > 0) {
                 // Vérifier la taille totale avant upload
-                const totalSize = media.reduce((acc, file) => acc + file.size, 0);
+                const totalSize = filteredMedia.reduce((acc, file) => acc + file.size, 0);
                 const maxTotalSize = 200 * 1024 * 1024; // 200 MB max total
 
                 if (totalSize > maxTotalSize) {
@@ -1107,7 +1107,7 @@ export default function PostModal({
                 }
 
                 // Uploader chaque média
-                for (const file of media) {
+                for (const file of filteredMedia) {
                     // Vérifier la taille individuelle
                     if (file.size > 50 * 1024 * 1024) {
                         throw new Error(`Le fichier ${file.name} (${Math.round(file.size / 1024 / 1024)}Mo) dépasse la limite de 50Mo`);
@@ -1119,7 +1119,7 @@ export default function PostModal({
             }
 
             // Combiner les médias existants conservés et les nouveaux médias
-            const allMediaUrls = [...retainedExistingMediaUrls, ...uploadedMediaUrls];
+            const allMediaUrls = [...filteredExistingMediaUrls, ...uploadedMediaUrls];
 
             let updatedTweet;
 
@@ -1131,11 +1131,25 @@ export default function PostModal({
                     allMediaUrls.length > 0 ? allMediaUrls : undefined
                 );
 
-                // Important: Nous ne supprimons plus les fichiers médias retirés du post
-                // Cela permet aux reposts de continuer à y accéder
-                // Les fichiers seront conservés sur le serveur même s'ils ne sont plus utilisés dans ce post
-                console.log(`Médias retirés du post (${mediaToDelete.length}) non supprimés pour préserver les reposts`);
+                // Supprimer les médias qui ne sont plus utilisés
+                if (mediaToDelete.length > 0) {
+                    for (const mediaUrl of mediaToDelete) {
+                        try {
+                            // Extraire le nom du fichier de l'URL
+                            const filename = mediaUrl.includes('/')
+                                ? mediaUrl.split('/').pop() || mediaUrl
+                                : mediaUrl;
 
+                            await deleteMediaFile(filename);
+                        } catch (error) {
+                            // Ne pas bloquer le processus si la suppression échoue
+                        }
+                    }
+                }
+
+                if (onPostUpdated) {
+                    onPostUpdated(updatedTweet);
+                }
             } else {
                 // Mode création: Créer un nouveau post
                 const newTweet = await createPost(
@@ -1152,7 +1166,6 @@ export default function PostModal({
             handleModalClose();
         } catch (error) {
             // Afficher l'erreur à l'utilisateur
-            console.error('Erreur lors de la soumission du post:', error);
             alert(error instanceof Error ? error.message : 'Une erreur est survenue lors de la soumission');
         } finally {
             setIsSubmitting(false);
@@ -1172,8 +1185,9 @@ export default function PostModal({
             }
         });
 
-        // Ne pas supprimer les fichiers marqués puisque la modification est annulée
+        // Réinitialiser tous les états
         setMediaToDelete([]);
+        setHiddenMediaIndexes([]);
 
         // Fermer le modal
         onClose();
@@ -1358,123 +1372,43 @@ export default function PostModal({
                     </div>
 
                     {mediaPreviews.length > 0 && (
-                        <div
-                            className="
-                                p-4 
-                                flex 
-                                space-x-2 
-                                overflow-x-auto 
-                                scrollbar-thin 
-                                scrollbar-thumb-gray-300 
-                                scrollbar-track-gray-100
-                                rounded-lg
-                            "
-                        >
-                            {mediaPreviews.map((preview, index) => {
-                                const isVideo = mediaTypes[index] === 'video';
-                                return (
-                                    <div
-                                        key={index}
-                                        className="
-                                            relative 
-                                            flex-shrink-0 
-                                            w-24 
-                                            h-24 
-                                            rounded-lg 
-                                            overflow-hidden 
-                                            group
-                                            border border-gray-500
-                                        "
-                                    >
-                                        {isVideo ? (
-                                            <video
-                                                src={preview}
-                                                className="
-                                                    w-full 
-                                                    h-full 
-                                                    object-cover
-                                                "
-                                            />
-                                        ) : (
-                                            <img
-                                                src={preview}
-                                                alt={`Prévisualisation ${index + 1}`}
-                                                className="
-                                                    w-full 
-                                                    h-full 
-                                                    object-cover 
-                                                    group-hover:opacity-80 
-                                                    transition-opacity
-                                                "
-                                            />
-                                        )}
+                        <div className="mt-4">
+                            <div className="grid grid-cols-2 gap-2 mb-4">
+                                {mediaPreviews.map((preview, index) => {
+                                    // Ne pas afficher les médias masqués
+                                    if (hiddenMediaIndexes.includes(index)) {
+                                        return null;
+                                    }
 
-                                        {/* Bouton de suppression */}
-                                        <button
-                                            type="button"
-                                            onClick={(e) => {
-                                                e.stopPropagation(); // Empêcher la propagation des événements
-                                                handleRemoveMedia(preview);
-                                            }}
-                                            className={`
-                                                absolute 
-                                                top-1 
-                                                right-1 
-                                                bg-black 
-                                                text-white 
-                                                rounded-full 
-                                                p-1 
-                                                hover:bg-black/70
-                                                z-10
-                                                ${isVideo ? 'video-delete-btn' : 'image-delete-btn'}
-                                            `}
-                                            title="Supprimer"
-                                            data-index={index}
-                                            data-type={isVideo ? 'video' : 'image'}
-                                        >
-                                            <svg
-                                                xmlns="http://www.w3.org/2000/svg"
-                                                className="h-3 w-3"
-                                                fill="none"
-                                                viewBox="0 0 24 24"
-                                                stroke="currentColor"
-                                            >
-                                                <path
-                                                    strokeLinecap="round"
-                                                    strokeLinejoin="round"
-                                                    strokeWidth={2}
-                                                    d="M6 18L18 6M6 6l12 12"
+                                    const isVideo = mediaTypes[index] === 'video';
+                                    return (
+                                        <div key={index} className="relative border rounded-lg overflow-hidden group">
+                                            {isVideo ? (
+                                                <video
+                                                    src={preview}
+                                                    className="w-full h-40 object-cover bg-gray-200"
+                                                    controls
+                                                ></video>
+                                            ) : (
+                                                <img
+                                                    src={preview}
+                                                    alt={`Media ${index + 1}`}
+                                                    className="w-full h-40 object-cover bg-gray-200"
                                                 />
-                                            </svg>
-                                        </button>
-
-                                        {/* Icône de lecture pour les vidéos */}
-                                        {isVideo && (
-                                            <div className="
-                                                absolute 
-                                                inset-0 
-                                                flex 
-                                                items-center 
-                                                justify-center 
-                                                bg-black/30
-                                            ">
-                                                <svg
-                                                    xmlns="http://www.w3.org/2000/svg"
-                                                    viewBox="0 0 24 24"
-                                                    fill="white"
-                                                    className="w-6 h-6"
-                                                >
-                                                    <path
-                                                        fillRule="evenodd"
-                                                        d="M4.5 5.653c0-1.426 1.529-2.33 2.779-1.643l11.54 6.348c1.295.712 1.295 2.573 0 3.285L7.28 19.991c-1.25.687-2.779-.217-2.779-1.643V5.653z"
-                                                        clipRule="evenodd"
-                                                    />
+                                            )}
+                                            <button
+                                                type="button"
+                                                onClick={() => handleRemoveMedia(index)}
+                                                className="absolute top-2 right-2 p-1 bg-black bg-opacity-50 text-white rounded-full hover:bg-opacity-70 transition-opacity"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                                                 </svg>
-                                            </div>
-                                        )}
-                                    </div>
-                                );
-                            })}
+                                            </button>
+                                        </div>
+                                    );
+                                })}
+                            </div>
                         </div>
                     )}
                     {mediaPreviews.length > 0 && (

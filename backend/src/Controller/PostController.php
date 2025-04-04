@@ -400,6 +400,9 @@ class PostController extends AbstractController
             return $this->json(['message' => 'Vous n\'êtes pas autorisé à supprimer ce post'], Response::HTTP_FORBIDDEN);
         }
 
+        // Récupérer et traiter les médias avant la suppression du post
+        $mediaUrls = $post->getMediaUrl() ? explode(',', $post->getMediaUrl()) : [];
+
         // Si c'est un retweet, décrémenter le compteur du post original
         if ($post->isRetweet() && $post->getOriginalPost()) {
             $originalPost = $post->getOriginalPost();
@@ -440,6 +443,13 @@ class PostController extends AbstractController
         $entityManager->remove($post);
         $entityManager->flush();
 
+        // Maintenant que le post est supprimé, vérifier et supprimer les médias si nécessaire
+        foreach ($mediaUrls as $mediaUrl) {
+            if (!empty($mediaUrl)) {
+                $this->deleteMediaFile($mediaUrl, $id, $entityManager);
+            }
+        }
+
         return $this->json(['message' => 'Post supprimé avec succès']);
     }
 
@@ -471,6 +481,22 @@ class PostController extends AbstractController
             return $this->json(['message' => 'Contenu ou média requis'], 400);
         }
 
+        // Récupérer les médias actuels du post
+        $currentMediaUrls = $post->getMediaUrl() ? explode(',', $post->getMediaUrl()) : [];
+
+        // Médias après modification
+        $newMediaUrls = isset($data['mediaUrls']) && is_array($data['mediaUrls']) ? $data['mediaUrls'] : [];
+
+        // Identifier les médias qui ont été supprimés
+        $removedMedias = array_diff($currentMediaUrls, $newMediaUrls);
+
+        // Vérifier si les médias supprimés sont utilisés ailleurs
+        foreach ($removedMedias as $mediaUrl) {
+            if (!empty($mediaUrl)) {
+                $this->deleteMediaFile($mediaUrl, $id, $entityManager);
+            }
+        }
+
         // Mise à jour du contenu si présent
         if (isset($data['content'])) {
             $post->setContent($data['content']);
@@ -478,25 +504,13 @@ class PostController extends AbstractController
 
         // Mise à jour des médias si présents
         if (isset($data['mediaUrls']) && is_array($data['mediaUrls']) && count($data['mediaUrls']) <= 10) {
-            // Mémoriser les médias actuels pour la mise à jour des retweets
-            $currentMediaUrl = $post->getMediaUrl();
-
-            // Mettre à jour le post avec les nouveaux médias
             $post->setMediaUrl(implode(',', $data['mediaUrls']));
-
-            // Enregistrer les changements pour ce post
-            $entityManager->flush();
-
-            // Mettre à jour les retweets qui pointent vers ce post
-            if ($currentMediaUrl !== $post->getMediaUrl()) {
-                // Ne pas mettre à jour les médias des retweets - ils conservent leur "instantané" du post original
-                // Les modifications du post original n'affectent pas les retweets existants
-                // car les retweets contiennent déjà une copie du contenu et des médias
-            }
-        } else {
-            // Juste enregistrer les changements si pas de mise à jour des médias
-            $entityManager->flush();
         }
+
+        // Les modifications du post original n'affectent pas les retweets existants
+        // car les retweets contiennent déjà une copie du contenu et des médias
+
+        $entityManager->flush();
 
         // Récupérer le nombre de likes
         $totalLikes = $interactionRepository->count(['post' => $post, 'liked' => true]);
@@ -851,5 +865,52 @@ class PostController extends AbstractController
         }
 
         return $this->json(['posts' => $formattedPosts]);
+    }
+
+    /**
+     * Vérifie si un média est utilisé dans d'autres posts et le supprime si nécessaire
+     */
+    private function deleteMediaFile(string $mediaUrl, int $currentPostId, EntityManagerInterface $entityManager): bool
+    {
+        // Vérifier si le média est utilisé dans d'autres posts
+        $isUsedElsewhere = $this->isMediaUsedElsewhere($mediaUrl, $currentPostId, $entityManager);
+
+        // Si le média n'est pas utilisé ailleurs, on peut le supprimer physiquement
+        if (!$isUsedElsewhere) {
+            $mediaPath = $this->getParameter('kernel.project_dir') . '/public/images/' . $mediaUrl;
+
+            if (file_exists($mediaPath)) {
+                return unlink($mediaPath);
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Vérifie si un média est utilisé dans d'autres posts
+     */
+    private function isMediaUsedElsewhere(string $mediaUrl, int $currentPostId, EntityManagerInterface $entityManager): bool
+    {
+        $qb = $entityManager->createQueryBuilder();
+        $query = $qb->select('COUNT(p.id)')
+            ->from(Post::class, 'p')
+            ->where('p.id != :currentPostId')
+            ->andWhere(
+                $qb->expr()->orX(
+                    $qb->expr()->eq('p.mediaUrl', ':exactMedia'),
+                    $qb->expr()->like('p.mediaUrl', ':mediaStart'),
+                    $qb->expr()->like('p.mediaUrl', ':mediaMiddle'),
+                    $qb->expr()->like('p.mediaUrl', ':mediaEnd')
+                )
+            )
+            ->setParameter('currentPostId', $currentPostId)
+            ->setParameter('exactMedia', $mediaUrl)
+            ->setParameter('mediaStart', $mediaUrl . ',%')
+            ->setParameter('mediaMiddle', '%,' . $mediaUrl . ',%')
+            ->setParameter('mediaEnd', '%,' . $mediaUrl)
+            ->getQuery();
+
+        return (int)$query->getSingleScalarResult() > 0;
     }
 }

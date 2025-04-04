@@ -695,10 +695,9 @@ export async function uploadImage(file: File, type: 'avatar' | 'banner' | 'post'
 /**
  * Supprime un fichier média du serveur
  * @param filename Nom du fichier à supprimer
- * @param checkRepostsUsage Si true, vérifie d'abord si le média est utilisé par des reposts
  * @returns Promise qui se résout quand la suppression est terminée
  */
-export async function deleteMediaFile(filename: string, checkRepostsUsage: boolean = true): Promise<void> {
+export async function deleteMediaFile(filename: string): Promise<void> {
     // Vérifier que le nom de fichier n'est pas vide
     if (!filename || filename.trim() === '') {
         console.error('Tentative de suppression avec un nom de fichier vide');
@@ -707,7 +706,6 @@ export async function deleteMediaFile(filename: string, checkRepostsUsage: boole
 
     const token = localStorage.getItem('token');
     if (!token) {
-        logout();
         throw new Error('Non authentifié');
     }
 
@@ -716,36 +714,6 @@ export async function deleteMediaFile(filename: string, checkRepostsUsage: boole
 
     try {
         console.log(`Demande de suppression du fichier: ${cleanFilename}`);
-
-        // Si on doit vérifier l'utilisation par des reposts
-        if (checkRepostsUsage) {
-            try {
-                // Vérifier si d'autres posts utilisent ce média
-                const checkResponse = await fetch(`${API_BASE_URL}/media/check-usage?filename=${cleanFilename}`, {
-                    method: 'GET',
-                    headers: {
-                        'Authorization': `Bearer ${token}`
-                    }
-                });
-
-                if (checkResponse.ok) {
-                    const usageData = await checkResponse.json();
-
-                    // Si ce média est utilisé par plus d'un post, ne pas le supprimer
-                    if (usageData.count > 1) {
-                        console.log(`Le média ${cleanFilename} est utilisé par ${usageData.count} posts, suppression annulée.`);
-                        throw new Error(`Le média ne peut pas être supprimé car il est utilisé par ${usageData.count - 1} autres posts, y compris des reposts.`);
-                    }
-                }
-            } catch (error) {
-                // Si l'erreur provient de notre propre vérification, on la propage
-                if (error instanceof Error && error.message.includes('reposts')) {
-                    throw error;
-                }
-                // Sinon on continue avec la tentative de suppression
-                console.warn(`Impossible de vérifier l'utilisation du média, tentative de suppression directe...`);
-            }
-        }
 
         // Afficher les détails de la requête pour le débogage
         console.log('Requête DELETE envoyée à:', `${API_BASE_URL}/media/delete`);
@@ -788,11 +756,6 @@ export async function deleteMediaFile(filename: string, checkRepostsUsage: boole
                 return;
             }
 
-            // Vérifier si l'erreur est due à l'utilisation du média par des reposts
-            if (response.status === 400 && errorData.message && errorData.message.includes('reposts')) {
-                throw new Error(`Le média ne peut pas être supprimé car il est utilisé par ${errorData.usageCount - 1} autres posts, y compris des reposts.`);
-            }
-
             throw new Error(errorData.message || 'Erreur lors de la suppression du média');
         }
 
@@ -805,7 +768,8 @@ export async function deleteMediaFile(filename: string, checkRepostsUsage: boole
         }
     } catch (error) {
         console.error(`Échec de suppression du fichier ${cleanFilename}:`, error);
-        throw error; // Propager l'erreur pour qu'elle puisse être gérée par le composant appelant
+        // Ne pas propager l'erreur pour éviter de bloquer le flux principal
+        // si la suppression du média échoue
     }
 }
 
