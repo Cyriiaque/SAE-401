@@ -13,7 +13,7 @@ use Doctrine\ORM\EntityManagerInterface;
 class UserController extends AbstractController
 {
     #[Route('/users', name: 'app_users_list', methods: ['GET'])]
-    #[IsGranted('ROLE_ADMIN')]
+    #[IsGranted('ROLE_USER')]
     public function index(UserRepository $userRepository): JsonResponse
     {
         $users = $userRepository->findAll();

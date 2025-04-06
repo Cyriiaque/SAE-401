@@ -7,6 +7,7 @@ import Sidebar from '../components/Sidebar';
 import { fetchPosts, Tweet, fetchFollowedPosts, getImageUrl, fetchBlockedUsers, User, searchPosts } from '../lib/loaders';
 import UserProfile from '../components/UserProfile';
 import Button from '../ui/buttons';
+import Header from '../components/Header';
 
 interface PostsResponse {
   posts: Tweet[];
@@ -17,67 +18,30 @@ interface PostsResponse {
 // Composant pour l'en-tête
 const HomeHeader = ({ refreshPosts }: { refreshPosts: () => void }) => {
   return (
-    <>
-      {/* En-tête mobile */}
-      <div className="sticky top-0 bg-white z-10 border-b border-gray-200 lg:hidden">
-        <div className="p-4 flex items-center">
-          <div className="flex-1 text-center">
-            <h2 className="ml-8 text-xl font-bold">Accueil</h2>
-          </div>
-          <Button
-            onClick={refreshPosts}
-            variant="outline"
-            className="p-2"
-            title="Rafraîchir les posts"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-              strokeWidth={1.5}
-              stroke="currentColor"
-              className="w-5 h-5"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.990"
-              />
-            </svg>
-          </Button>
-        </div>
-      </div>
-
-      {/* En-tête desktop */}
-      <div className="hidden lg:block sticky top-0 bg-white z-10 border-b border-gray-200">
-        <div className="p-4 flex items-center justify-between">
-          <div className="flex-1 pl-4">
-            <h2 className="text-xl font-bold">Accueil</h2>
-          </div>
-          <Button
-            onClick={refreshPosts}
-            variant="outline"
-            className="flex items-center gap-2"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-              strokeWidth={1.5}
-              stroke="currentColor"
-              className="w-5 h-5"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.990"
-              />
-            </svg>
-            Rafraîchir les posts
-          </Button>
-        </div>
-      </div>
-    </>
+    <Header title="Accueil">
+      <Button
+        onClick={refreshPosts}
+        variant="outline"
+        className="p-2 lg:flex lg:items-center lg:gap-2"
+        title="Rafraîchir les posts"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24"
+          strokeWidth={1.5}
+          stroke="currentColor"
+          className="w-5 h-5"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.990"
+          />
+        </svg>
+        <span className="hidden lg:inline">Rafraîchir les posts</span>
+      </Button>
+    </Header>
   );
 };
 

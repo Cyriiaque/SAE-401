@@ -105,6 +105,21 @@ export interface Reply {
     isLiked: boolean;
 }
 
+// Interface pour les notifications
+export interface Notification {
+    id: number;
+    content: string;
+    created_at: string;
+    is_read: boolean;
+    is_validated: boolean | null;
+    source: {
+        id: number;
+        name: string;
+        mention: string;
+        avatar: string | null;
+    };
+}
+
 // Fonctions d'authentification
 export async function register(data: RegisterData): Promise<RegisterResponse> {
     const response = await fetch(`${API_BASE_URL}/register`, {
@@ -1140,6 +1155,125 @@ export async function getRetweetStatus(postId: number): Promise<{ retweets: numb
             throw new Error('Session expirée');
         }
         throw new Error('Erreur lors de la vérification du statut de retweet');
+    }
+
+    return response.json();
+}
+
+// Fonction pour récupérer les notifications
+export async function fetchNotifications(): Promise<{ notifications: Notification[] }> {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('Non authentifié');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/notifications`, {
+        headers: {
+            'Authorization': `Bearer ${token}`
+        }
+    });
+
+    if (!response.ok) {
+        if (response.status === 401) {
+            logout();
+            throw new Error('Session expirée');
+        }
+        throw new Error('Erreur lors de la récupération des notifications');
+    }
+
+    return response.json();
+}
+
+// Fonction pour récupérer le nombre de notifications non lues
+export async function fetchUnreadNotificationsCount(): Promise<number> {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('Non authentifié');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/notifications/unread-count`, {
+        headers: {
+            'Authorization': `Bearer ${token}`
+        }
+    });
+
+    if (!response.ok) {
+        if (response.status === 401) {
+            logout();
+            throw new Error('Session expirée');
+        }
+        throw new Error('Erreur lors de la récupération du nombre de notifications non lues');
+    }
+
+    const data = await response.json();
+    return data.count;
+}
+
+// Fonction pour marquer toutes les notifications comme lues
+export async function markAllNotificationsAsRead(): Promise<void> {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('Non authentifié');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/notifications/mark-all-read`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${token}`
+        }
+    });
+
+    if (!response.ok) {
+        if (response.status === 401) {
+            logout();
+            throw new Error('Session expirée');
+        }
+        throw new Error('Erreur lors du marquage des notifications comme lues');
+    }
+}
+
+// Fonction pour marquer une notification comme lue
+export async function markNotificationAsRead(notificationId: number): Promise<void> {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('Non authentifié');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/notifications/${notificationId}/mark-read`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${token}`
+        }
+    });
+
+    if (!response.ok) {
+        if (response.status === 401) {
+            logout();
+            throw new Error('Session expirée');
+        }
+        throw new Error('Erreur lors du marquage de la notification comme lue');
+    }
+}
+
+// Fonction pour rechercher des notifications
+export async function searchNotifications(query: string): Promise<{ notifications: Notification[] }> {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('Non authentifié');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/notifications/search?query=${encodeURIComponent(query)}`, {
+        headers: {
+            'Authorization': `Bearer ${token}`
+        }
+    });
+
+    if (!response.ok) {
+        if (response.status === 401) {
+            logout();
+            throw new Error('Session expirée');
+        }
+        throw new Error('Erreur lors de la recherche de notifications');
     }
 
     return response.json();

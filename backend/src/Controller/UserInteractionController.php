@@ -2,10 +2,12 @@
 
 namespace App\Controller;
 
+use App\Entity\Notifications;
 use App\Entity\User;
 use App\Entity\UserInteraction;
 use App\Repository\UserRepository;
 use App\Repository\UserInteractionRepository;
+use App\Repository\NotificationsRepository;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -63,6 +65,7 @@ class UserInteractionController extends AbstractController
         int $id,
         UserRepository $userRepository,
         UserInteractionRepository $interactionRepository,
+        NotificationsRepository $notificationsRepository,
         EntityManagerInterface $entityManager,
         #[CurrentUser] User $currentUser
     ): JsonResponse {
@@ -93,6 +96,8 @@ class UserInteractionController extends AbstractController
             'target' => $targetUser
         ]);
 
+        $wasFollowing = $interaction ? $interaction->isFollow() : false;
+
         // Si aucune interaction n'existe, en créer une nouvelle
         if (!$interaction) {
             $interaction = new UserInteraction();
@@ -104,6 +109,18 @@ class UserInteractionController extends AbstractController
         } else {
             // Inverser le statut de suivi
             $interaction->setFollow(!$interaction->isFollow());
+        }
+
+        // Créer une notification si l'utilisateur commence à suivre la cible
+        // (et non s'il arrête de suivre)
+        if ($interaction->isFollow() && !$wasFollowing) {
+            $notification = new Notifications();
+            $notification->setSource($currentUser);
+            $notification->setTarget($targetUser);
+            $notification->setContent($currentUser->getName() . " a commencé à vous suivre");
+            $notification->setCreatedAt(new \DateTime('now', new \DateTimeZone('Europe/Paris')));
+            $notification->setIsRead(false);
+            $notificationsRepository->save($notification, false);
         }
 
         $entityManager->flush();

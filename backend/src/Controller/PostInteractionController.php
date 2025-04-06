@@ -2,6 +2,7 @@
 
 namespace App\Controller;
 
+use App\Entity\Notifications;
 use App\Repository\PostRepository;
 use App\Repository\PostInteractionRepository;
 use Doctrine\ORM\EntityManagerInterface;
@@ -15,6 +16,7 @@ use Symfony\Component\Security\Http\Attribute\CurrentUser;
 use App\Entity\PostInteraction;
 use App\Entity\User;
 use App\Repository\UserInteractionRepository;
+use App\Repository\NotificationsRepository;
 
 class PostInteractionController extends AbstractController
 {
@@ -26,6 +28,7 @@ class PostInteractionController extends AbstractController
         PostInteractionRepository $interactionRepository,
         UserInteractionRepository $userInteractionRepository,
         EntityManagerInterface $entityManager,
+        NotificationsRepository $notificationsRepository,
         #[CurrentUser] $user
     ): JsonResponse {
         $post = $postRepository->find($id);
@@ -51,6 +54,8 @@ class PostInteractionController extends AbstractController
             'post' => $post
         ]);
 
+        $wasLiked = $interaction ? $interaction->isLiked() : false;
+
         if ($interaction) {
             // Si l'utilisateur a déjà une interaction, on la met à jour
             $interaction->setLiked(!$interaction->isLiked());
@@ -64,6 +69,22 @@ class PostInteractionController extends AbstractController
         }
 
         $entityManager->flush();
+
+        // Envoyer une notification à l'auteur du post si c'est un nouveau like
+        // et que l'utilisateur n'est pas en train de liker son propre post
+        $postAuthor = $post->getIdUser();
+        if ($interaction->isLiked() && !$wasLiked && $postAuthor && $postAuthor->getId() !== $user->getId()) {
+            // Créer une notification
+            $notification = new Notifications();
+            $notification->setSource($user);
+            $notification->setTarget($postAuthor);
+            $notification->setContent($user->getName() . ' a aimé votre post');
+            $notification->setCreatedAt(new \DateTime('now', new \DateTimeZone('Europe/Paris')));
+            $notification->setIsRead(false);
+
+            // Persister et enregistrer la notification
+            $notificationsRepository->save($notification, true);
+        }
 
         // Compter le nombre total de likes pour ce post
         $totalLikes = $interactionRepository->count(['post' => $post, 'liked' => true]);
@@ -110,6 +131,7 @@ class PostInteractionController extends AbstractController
         PostInteractionRepository $interactionRepository,
         UserInteractionRepository $userInteractionRepository,
         EntityManagerInterface $entityManager,
+        NotificationsRepository $notificationsRepository,
         #[CurrentUser] $user
     ): JsonResponse {
         $post = $postRepository->find($id);
@@ -172,9 +194,23 @@ class PostInteractionController extends AbstractController
 
         // Ajouter la réponse
         $interaction->setReply($data['reply']);
-        $interaction->setRepliedAt(new \DateTime());
+        $interaction->setRepliedAt(new \DateTime('now', new \DateTimeZone('Europe/Paris')));
 
+        // Enregistrer l'interaction
         $entityManager->flush();
+
+        // Envoyer une notification à l'auteur du post si ce n'est pas l'utilisateur lui-même qui répond
+        if ($postAuthor && $postAuthor->getId() !== $user->getId()) {
+            $notification = new Notifications();
+            $notification->setSource($user);
+            $notification->setTarget($postAuthor);
+            $notification->setContent($user->getName() . ' a répondu à votre post');
+            $notification->setCreatedAt(new \DateTime('now', new \DateTimeZone('Europe/Paris')));
+            $notification->setIsRead(false);
+
+            // Persister la notification
+            $notificationsRepository->save($notification, true);
+        }
 
         return $this->json([
             'id' => $interaction->getId(),

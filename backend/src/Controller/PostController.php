@@ -21,6 +21,8 @@ use App\Entity\UserInteraction;
 use App\Entity\Post;
 use App\Entity\User;
 use App\Repository\UserRepository;
+use App\Entity\Notifications;
+use App\Repository\NotificationsRepository;
 
 class PostController extends AbstractController
 {
@@ -224,7 +226,9 @@ class PostController extends AbstractController
     #[IsGranted('ROLE_USER')]
     public function create(
         Request $request,
-        EntityManagerInterface $entityManager
+        EntityManagerInterface $entityManager,
+        UserRepository $userRepository,
+        NotificationsRepository $notificationsRepository
     ): JsonResponse {
         $data = json_decode($request->getContent(), true);
 
@@ -239,7 +243,7 @@ class PostController extends AbstractController
         $post = new Post();
         $post->setContent($data['content']);
         $post->setIdUser($user);
-        $post->setCreatedAt(new \DateTimeImmutable());
+        $post->setCreatedAt(new \DateTimeImmutable('now', new \DateTimeZone('Europe/Paris')));
 
         // Gestion des médias (jusqu'à 10)
         if (isset($data['mediaUrls']) && is_array($data['mediaUrls']) && count($data['mediaUrls']) <= 10) {
@@ -248,6 +252,35 @@ class PostController extends AbstractController
 
         $entityManager->persist($post);
         $entityManager->flush();
+
+        // Analyser le contenu pour trouver les mentions (@username)
+        preg_match_all('/@([a-zA-Z0-9_]+)/', $data['content'], $matches);
+
+        // S'il y a des mentions, créer des notifications
+        if (!empty($matches[1])) {
+            foreach ($matches[1] as $mention) {
+                // Trouver l'utilisateur par son nom d'utilisateur (mention)
+                $mentionedUser = $userRepository->findOneBy(['mention' => $mention]);
+
+                // Si l'utilisateur existe et n'est pas l'auteur du post
+                if ($mentionedUser && $mentionedUser->getId() !== $user->getId()) {
+                    // Créer une notification
+                    $notification = new Notifications();
+                    $notification->setSource($user);
+                    $notification->setTarget($mentionedUser);
+                    $notification->setContent($user->getName() . " vous a mentionné dans un post");
+                    $notification->setCreatedAt(new \DateTime('now', new \DateTimeZone('Europe/Paris')));
+                    $notification->setIsRead(false);
+
+                    // Enregistrer la notification
+                    $notificationsRepository->save($notification, false);
+                }
+            }
+            // Flush après avoir créé toutes les notifications
+            if ($entityManager->getUnitOfWork()->size() > 0) {
+                $entityManager->flush();
+            }
+        }
 
         return $this->json([
             'id' => $post->getId(),
@@ -611,6 +644,7 @@ class PostController extends AbstractController
         PostRepository $postRepository,
         EntityManagerInterface $entityManager,
         UserRepository $userRepository,
+        NotificationsRepository $notificationsRepository,
         #[CurrentUser] User $currentUser
     ): JsonResponse {
         // Récupérer le post original
@@ -655,7 +689,7 @@ class PostController extends AbstractController
         $retweet->setOriginalPost($originalPost);
         $retweet->setOriginalUser($originalPost->getIdUser()); // Stocker l'utilisateur original
         $retweet->setIdUser($currentUser); // L'utilisateur qui retweet devient le propriétaire
-        $retweet->setCreatedAt(new \DateTimeImmutable());
+        $retweet->setCreatedAt(new \DateTimeImmutable('now', new \DateTimeZone('Europe/Paris')));
 
         // Stocker le contenu du post original dans le champ retweeted_content
         $retweet->setRetweetedContent($originalPost->getContent());
@@ -672,6 +706,15 @@ class PostController extends AbstractController
 
         // Incrémenter le compteur de retweets du post original
         $originalPost->incrementRetweetCount();
+
+        // Créer une notification pour l'auteur du post original
+        $notification = new Notifications();
+        $notification->setSource($currentUser);
+        $notification->setTarget($originalPost->getIdUser());
+        $notification->setContent($currentUser->getName() . " a repartagé votre post");
+        $notification->setCreatedAt(new \DateTime('now', new \DateTimeZone('Europe/Paris')));
+        $notification->setIsRead(false);
+        $notificationsRepository->save($notification, false);
 
         // Persister les changements
         $entityManager->persist($retweet);

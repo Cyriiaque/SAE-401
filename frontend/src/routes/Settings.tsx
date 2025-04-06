@@ -3,6 +3,7 @@ import Sidebar from '../components/Sidebar';
 import Button from '../ui/buttons';
 import { useAuth } from '../contexts/AuthContext';
 import { updateUserSettings } from '../lib/loaders';
+import Header from '../components/Header';
 
 export default function Settings() {
     const { user, setUser } = useAuth();
@@ -83,11 +84,7 @@ export default function Settings() {
             <Sidebar />
             <div className="flex-1 lg:ml-64">
                 <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <div className="border-b border-gray-200 sticky top-0 bg-white z-10">
-                        <div className="p-5">
-                            <h2 className="text-xl font-bold text-center">Paramètres</h2>
-                        </div>
-                    </div>
+                    <Header title="Paramètres" />
 
                     {/* Section Actualisation régulière */}
                     <div className='mt-8 flex flex-row gap-4 items-center'>
