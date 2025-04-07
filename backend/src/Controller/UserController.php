@@ -14,9 +14,23 @@ class UserController extends AbstractController
 {
     #[Route('/users', name: 'app_users_list', methods: ['GET'])]
     #[IsGranted('ROLE_USER')]
-    public function index(UserRepository $userRepository): JsonResponse
+    public function index(UserRepository $userRepository, Request $request): JsonResponse
     {
-        $users = $userRepository->findAll();
+        // Vérifier s'il y a un paramètre de recherche
+        $query = $request->query->get('query', '');
+
+        if (!empty($query)) {
+            // Rechercher les utilisateurs par nom ou mention
+            $users = $userRepository->createQueryBuilder('u')
+                ->where('u.name LIKE :query')
+                ->orWhere('u.mention LIKE :query')
+                ->setParameter('query', '%' . $query . '%')
+                ->getQuery()
+                ->getResult();
+        } else {
+            // Sinon retourner tous les utilisateurs
+            $users = $userRepository->findAll();
+        }
 
         $usersArray = array_map(function ($user) {
             return [
@@ -28,7 +42,8 @@ class UserController extends AbstractController
                 'banner' => $user->getBanner(),
                 'biography' => $user->getBiography(),
                 'roles' => $user->getRoles(),
-                'isbanned' => $user->isbanned()
+                'isbanned' => $user->isbanned(),
+                'isPrivate' => $user->isPrivate()
             ];
         }, $users);
 
@@ -95,6 +110,9 @@ class UserController extends AbstractController
         if (isset($data['email'])) {
             $user->setEmail($data['email']);
         }
+        if (isset($data['isPrivate'])) {
+            $user->setIsPrivate($data['isPrivate']);
+        }
 
         $entityManager->flush();
 
@@ -109,7 +127,8 @@ class UserController extends AbstractController
             'roles' => $user->getRoles(),
             'isbanned' => $user->isbanned(),
             'postReload' => $user->getPostReload(),
-            'isVerified' => $user->isVerified()
+            'isVerified' => $user->isVerified(),
+            'isPrivate' => $user->isPrivate()
         ]);
     }
 
@@ -165,7 +184,8 @@ class UserController extends AbstractController
             'banner' => $user->getBanner(),
             'biography' => $user->getBiography(),
             'roles' => $user->getRoles(),
-            'isbanned' => $user->isbanned()
+            'isbanned' => $user->isbanned(),
+            'isPrivate' => $user->isPrivate()
         ]);
     }
 }

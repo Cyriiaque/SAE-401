@@ -27,7 +27,7 @@ use App\Repository\NotificationsRepository;
 class PostController extends AbstractController
 {
     #[Route('/posts/search', name: 'posts.search', methods: ['GET'])]
-    #[IsGranted('ROLE_ADMIN')]
+    #[IsGranted('ROLE_USER')]
     public function searchPosts(
         Request $request,
         EntityManagerInterface $entityManager,
@@ -50,6 +50,7 @@ class PostController extends AbstractController
                 $qb->expr()->like('u.name', ':query'),
                 $qb->expr()->like('u.mention', ':query')
             ))
+            ->andWhere('u.is_private = false') // Exclure les posts des utilisateurs en mode privé
             ->setParameter('query', '%' . $query . '%')
             ->orderBy('p.created_at', 'DESC');
 
@@ -97,6 +98,7 @@ class PostController extends AbstractController
         Request $request,
         PostRepository $postRepository,
         PostInteractionRepository $interactionRepository,
+        EntityManagerInterface $entityManager,
         #[CurrentUser] $user = null
     ): JsonResponse {
         // Pagination
@@ -104,13 +106,17 @@ class PostController extends AbstractController
         $limit = 20;
         $offset = ($page - 1) * $limit;
 
-        // Récupérer les posts avec pagination
-        $posts = $postRepository->findBy(
-            [], // critères (aucun)
-            ['created_at' => 'DESC'], // tri par date de création décroissante
-            $limit,
-            $offset
-        );
+        // Créer une requête personnalisée pour exclure les posts des utilisateurs en mode privé
+        $qb = $entityManager->createQueryBuilder();
+        $qb->select('p')
+            ->from(Post::class, 'p')
+            ->join('p.user', 'u')
+            ->where('u.is_private = false')
+            ->orderBy('p.created_at', 'DESC')
+            ->setFirstResult($offset)
+            ->setMaxResults($limit);
+
+        $posts = $qb->getQuery()->getResult();
 
         // Formater les données
         $formattedPosts = [];
@@ -118,9 +124,19 @@ class PostController extends AbstractController
             $formattedPosts[] = $this->formatPostForResponse($post, $user, $interactionRepository);
         }
 
+        // Compter le nombre total de posts d'utilisateurs non privés pour la pagination
+        $totalQb = $entityManager->createQueryBuilder();
+        $totalQb->select('COUNT(p.id)')
+            ->from(Post::class, 'p')
+            ->join('p.user', 'u')
+            ->where('u.is_private = false');
+
+        $totalPosts = $totalQb->getQuery()->getSingleScalarResult();
+        $totalPages = ceil($totalPosts / $limit);
+
         // Déterminer les liens de pagination
         $previousPage = $page > 1 ? $page - 1 : null;
-        $nextPage = count($posts) == $limit ? $page + 1 : null;
+        $nextPage = $page < $totalPages ? $page + 1 : null;
 
         // Construire la réponse paginée
         return $this->json([
@@ -210,7 +226,8 @@ class PostController extends AbstractController
                     'mention' => $userPost->getMention(),
                     'avatar' => $userPost->getAvatar(),
                     'isbanned' => $userPost->isbanned(),
-                    'readOnly' => $userPost->isReadOnly()
+                    'readOnly' => $userPost->isReadOnly(),
+                    'is_private' => $userPost->isPrivate()
                 ] : null
             ];
         }
@@ -571,7 +588,7 @@ class PostController extends AbstractController
     }
 
     #[Route('/posts/{id}/toggle-censorship', name: 'posts.toggle_censorship', methods: ['PUT'])]
-    #[IsGranted('ROLE_ADMIN')]
+    #[IsGranted('ROLE_USER')]
     public function toggleCensorship(
         int $id,
         PostRepository $postRepository,
@@ -738,14 +755,16 @@ class PostController extends AbstractController
                     'id' => $originalPost->getIdUser()->getId(),
                     'name' => $originalPost->getIdUser()->getName(),
                     'mention' => $originalPost->getIdUser()->getMention(),
-                    'avatar' => $originalPost->getIdUser()->getAvatar()
+                    'avatar' => $originalPost->getIdUser()->getAvatar(),
+                    'isPrivate' => $originalPost->getIdUser()->isPrivate()
                 ] : null
             ],
             'originalUser' => [
                 'id' => $originalPost->getIdUser()->getId(),
                 'name' => $originalPost->getIdUser()->getName(),
                 'mention' => $originalPost->getIdUser()->getMention(),
-                'avatar' => $originalPost->getIdUser()->getAvatar()
+                'avatar' => $originalPost->getIdUser()->getAvatar(),
+                'isPrivate' => $originalPost->getIdUser()->isPrivate()
             ],
             'user' => [
                 'id' => $currentUser->getId(),
@@ -891,6 +910,26 @@ class PostController extends AbstractController
 
         if (!$targetUser) {
             return $this->json(['message' => 'Utilisateur non trouvé'], Response::HTTP_NOT_FOUND);
+        }
+
+        // Vérifier si l'utilisateur cible est en mode privé
+        if ($targetUser->isPrivate() && $targetUser->getId() !== $user->getId()) {
+            // Vérifier si l'utilisateur courant suit l'utilisateur cible
+            $qb = $entityManager->createQueryBuilder();
+            $followStatus = $qb->select('ui')
+                ->from(UserInteraction::class, 'ui')
+                ->where('ui.source = :source')
+                ->andWhere('ui.target = :target')
+                ->andWhere('ui.follow = true')
+                ->setParameter('source', $user)
+                ->setParameter('target', $targetUser)
+                ->getQuery()
+                ->getResult();
+
+            // Si l'utilisateur courant ne suit pas l'utilisateur cible, ne pas afficher les posts
+            if (empty($followStatus)) {
+                return $this->json(['posts' => [], 'is_private' => true]);
+            }
         }
 
         // Utiliser findByUserOrderByPinned qui inclut les retweets

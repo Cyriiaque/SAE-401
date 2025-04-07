@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { usePostModal } from '../contexts/PostModalContext';
 import TweetCard from '../components/TweetCard';
 import Sidebar from '../components/Sidebar';
-import { fetchPosts, Tweet, fetchFollowedPosts, getImageUrl, fetchBlockedUsers, User, searchPosts } from '../lib/loaders';
+import { fetchPosts, Tweet, fetchFollowedPosts, getImageUrl, fetchBlockedUsers, User, searchPosts, fetchUsersByQuery } from '../lib/loaders';
 import UserProfile from '../components/UserProfile';
 import Button from '../ui/buttons';
 import Header from '../components/Header';
@@ -106,6 +106,9 @@ export default function Home() {
   const [userFilter, setUserFilter] = useState<string>('');
   const [moderationFilterCount, setModerationFilterCount] = useState<number>(0);
 
+  // États pour la recherche d'utilisateurs
+  const [searchResults, setSearchResults] = useState<{ users: User[], posts: Tweet[] }>({ users: [], posts: [] });
+
   // Effet pour bloquer/débloquer le scroll du body
   useEffect(() => {
     if (selectedUserId) {
@@ -194,13 +197,15 @@ export default function Home() {
 
     setIsSearching(true);
     setError(null);
+
     try {
-      // Pour l'instant, on utilise seulement la recherche textuelle
-      // Dans une version future, on pourrait améliorer l'API pour prendre en compte les filtres
-      const data = await searchPosts(searchQuery);
+      const results: { users: User[], posts: Tweet[] } = { users: [], posts: [] };
+
+      // Recherche de posts
+      const postsData = await searchPosts(searchQuery);
 
       // Application des filtres côté client
-      let filteredPosts = data.posts;
+      let filteredPosts = postsData.posts;
 
       // Compter le nombre de posts avant filtrage de modération
       const totalPostsBeforeModeration = filteredPosts.length;
@@ -208,7 +213,11 @@ export default function Home() {
       // Filtrer les posts des utilisateurs bannis et les posts censurés
       filteredPosts = filteredPosts.filter(post => {
         // Exclure les posts des utilisateurs bannis
-        if (post.user && post.user.isbanned) {
+        if (post.user && 'isbanned' in post.user && post.user.isbanned) {
+          return false;
+        }
+        // Exclure les posts des utilisateurs en mode privé
+        if (post.user && 'isPrivate' in post.user && post.user.isPrivate) {
           return false;
         }
         // Exclure les posts censurés
@@ -264,26 +273,22 @@ export default function Home() {
         );
       }
 
-      // Filtre par utilisateur
-      if (userFilter) {
-        filteredPosts = filteredPosts.filter(post =>
-          post.user && post.user.mention.toLowerCase().includes(userFilter.toLowerCase())
-        );
-      }
+      // Recherche d'utilisateurs
+      const usersData = await fetchUsersByQuery(searchQuery);
 
-      setPosts(filteredPosts);
+      results.posts = filteredPosts;
+      results.users = usersData;
+
+      setSearchResults(results);
+      setPosts(results.posts);
       setSearchMode(true);
       setHasMore(false);
-    } catch (err) {
-      console.error('Erreur lors de la recherche:', err);
-      if (err instanceof Error) {
-        setError(`Erreur lors de la recherche: ${err.message}`);
-      } else {
-        setError('Erreur inconnue lors de la recherche');
-      }
-    } finally {
-      setIsSearching(false);
+
+    } catch (error) {
+      console.error('Erreur lors de la recherche:', error);
+      setError('Erreur lors de la recherche');
     }
+    setIsSearching(false);
   };
 
   const handleSearchInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -305,14 +310,12 @@ export default function Home() {
     setUserFilter('');
     setModerationFilterCount(0);
     setSearchMode(false);
+    setPosts([]);
+    setPage(1);
+    setHasMore(true);
 
-    // Si nous sommes sur une URL avec des paramètres, rediriger vers la page d'accueil
-    if (location.search) {
-      navigate('/');
-    } else {
-      // Sinon, simplement recharger les posts
-      loadPosts(1);
-    }
+    // Recharger complètement la page
+    window.location.href = '/';
   };
 
   const toggleFilters = () => {
@@ -441,110 +444,132 @@ export default function Home() {
           <HomeHeader refreshPosts={refreshPosts} />
 
           {/* Navigation par onglets */}
-          <TabNavigation
-            activeTab={activeTab}
-            handleTabChange={handleTabChange}
-          />
-
-          {/* Barre de recherche */}
-          <div className="mx-4 mt-4 mb-2">
-            <form onSubmit={handleSearchSubmit} className="flex gap-2">
-              <div className="relative flex-1">
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={handleSearchInputChange}
-                  placeholder="Rechercher des posts..."
-                  className="w-full p-2 pl-4 pr-10 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-orange focus:border-transparent"
-                  disabled={isSearching}
-                />
-                {searchQuery && (
-                  <button
-                    type="button"
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
-                    onClick={() => setSearchQuery('')}
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                )}
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                className="p-2"
-                onClick={toggleFilters}
-                title="Filtres"
+          <div className="sticky top-0 bg-white z-10 border-b border-gray-200">
+            <div className="flex">
+              <button
+                onClick={() => handleTabChange('actualite')}
+                className={`flex-1 p-4 text-center font-bold transition-colors cursor-pointer ${activeTab === 'actualite'
+                  ? 'text-orange border-b-2 border-orange'
+                  : 'text-gray-500 hover:bg-gray-100'
+                  }`}
               >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-                </svg>
-              </Button>
-              <Button
-                variant="full"
-                type="submit"
-                className="px-4 py-2"
-                disabled={isSearching}
+                Actualité
+              </button>
+              <button
+                onClick={() => handleTabChange('suivis')}
+                className={`flex-1 p-4 text-center font-bold transition-colors cursor-pointer ${activeTab === 'suivis'
+                  ? 'text-orange border-b-2 border-orange'
+                  : 'text-gray-500 hover:bg-gray-100'
+                  }`}
               >
-                {isSearching ? (
-                  <div className="flex items-center">
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                    Recherche...
-                  </div>
-                ) : (
-                  <div className="flex items-center">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                    </svg>
-                    Rechercher
-                  </div>
-                )}
-              </Button>
-            </form>
+                Suivis
+              </button>
+            </div>
           </div>
 
-          {/* Filtres additionnels */}
-          {showFilters && (
-            <div className="mx-4 mb-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-              <h3 className="text-sm font-medium text-gray-700 mb-3">Filtres</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label htmlFor="dateFilter" className="block text-sm text-gray-600 mb-1">Date (après)</label>
-                  <input
-                    type="date"
-                    id="dateFilter"
-                    value={dateFilter}
-                    onChange={(e) => setDateFilter(e.target.value)}
-                    className="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="contentTypeFilter" className="block text-sm text-gray-600 mb-1">Type de contenu</label>
-                  <select
-                    id="contentTypeFilter"
-                    value={contentTypeFilter}
-                    onChange={(e) => setContentTypeFilter(e.target.value)}
-                    className="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange focus:border-transparent"
+          {/* Barre de recherche - visible uniquement dans l'onglet Actualité */}
+          {activeTab === 'actualite' && (
+            <>
+              <div className="mx-4 mt-4 mb-2">
+                <form onSubmit={handleSearchSubmit} className="flex gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={handleSearchInputChange}
+                      placeholder="Rechercher posts, utilisateurs..."
+                      className="w-full p-2 pl-4 pr-10 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-orange focus:border-transparent"
+                      disabled={isSearching}
+                    />
+                    {searchQuery && (
+                      <button
+                        type="button"
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                        onClick={() => setSearchQuery('')}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="p-2"
+                    onClick={toggleFilters}
+                    title="Filtres"
                   >
-                    <option value="">Tous</option>
-                    <option value="text">Texte uniquement</option>
-                    <option value="media">Avec média</option>
-                  </select>
-                </div>
-                <div>
-                  <label htmlFor="userFilter" className="block text-sm text-gray-600 mb-1">Par utilisateur (@mention)</label>
-                  <input
-                    type="text"
-                    id="userFilter"
-                    value={userFilter}
-                    onChange={(e) => setUserFilter(e.target.value)}
-                    placeholder="@mention"
-                    className="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange focus:border-transparent"
-                  />
-                </div>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                    </svg>
+                  </Button>
+                  <Button
+                    variant="full"
+                    type="submit"
+                    className="px-4 py-2"
+                    disabled={isSearching}
+                  >
+                    {isSearching ? (
+                      <div className="flex items-center">
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        Recherche...
+                      </div>
+                    ) : (
+                      <div className="flex items-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                        Rechercher
+                      </div>
+                    )}
+                  </Button>
+                </form>
               </div>
-            </div>
+
+              {/* Filtres additionnels */}
+              {showFilters && (
+                <div className="mx-4 mb-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                  <h3 className="text-sm font-medium text-gray-700 mb-3">Filtres</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label htmlFor="dateFilter" className="block text-sm text-gray-600 mb-1">Date (après)</label>
+                      <input
+                        type="date"
+                        id="dateFilter"
+                        value={dateFilter}
+                        onChange={(e) => setDateFilter(e.target.value)}
+                        className="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange focus:border-transparent"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="contentTypeFilter" className="block text-sm text-gray-600 mb-1">Type de contenu</label>
+                      <select
+                        id="contentTypeFilter"
+                        value={contentTypeFilter}
+                        onChange={(e) => setContentTypeFilter(e.target.value)}
+                        className="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange focus:border-transparent"
+                      >
+                        <option value="">Tous</option>
+                        <option value="text">Texte uniquement</option>
+                        <option value="media">Avec média</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label htmlFor="userFilter" className="block text-sm text-gray-600 mb-1">Par utilisateur (@mention)</label>
+                      <input
+                        type="text"
+                        id="userFilter"
+                        value={userFilter}
+                        onChange={(e) => setUserFilter(e.target.value)}
+                        placeholder="@mention"
+                        className="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange focus:border-transparent"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
           )}
 
           {/* État de la recherche */}
@@ -556,7 +581,10 @@ export default function Home() {
                 {(dateFilter || contentTypeFilter || userFilter) && (
                   <span className="text-gray-600 ml-2">(avec filtres)</span>
                 )}
-                <span className="ml-2 text-gray-600">• {posts.length} post{posts.length > 1 ? 's' : ''} trouvé{posts.length > 1 ? 's' : ''}</span>
+                <span className="ml-2 text-gray-600">
+                  • {posts.length} post{posts.length > 1 ? 's' : ''}
+                  • {searchResults.users.length} utilisateur{searchResults.users.length > 1 ? 's' : ''}
+                </span>
                 {moderationFilterCount > 0 && (
                   <span className="ml-2 text-orange-600">• {moderationFilterCount} exclu{moderationFilterCount > 1 ? 's' : ''}</span>
                 )}
@@ -570,6 +598,40 @@ export default function Home() {
                 </svg>
                 Effacer et afficher tout
               </button>
+            </div>
+          )}
+
+          {/* Résultats de recherche d'utilisateurs */}
+          {searchResults.users && searchResults.users.length > 0 && (
+            <div className="mx-4 mt-4 mb-6">
+              <h3 className="font-medium text-lg mb-2">Utilisateurs</h3>
+              <div className="divide-y divide-gray-200 border border-gray-200 rounded-lg">
+                {searchResults.users.map(user => (
+                  <div key={user.id} className="flex items-center p-4 hover:bg-gray-50 cursor-pointer" onClick={() => handleUserProfileClick(user.id)}>
+                    <div className="flex-shrink-0 mr-3">
+                      <img
+                        src={user.avatar ? getImageUrl(user.avatar) : '/default_pp.webp'}
+                        alt={user.name || "Utilisateur"}
+                        className="w-12 h-12 rounded-full object-cover"
+                        onError={(e) => {
+                          // Remplacer l'image en cas d'erreur de chargement
+                          const target = e.target as HTMLImageElement;
+                          target.onerror = null; // Éviter les boucles infinies
+                          target.src = '/default_pp.webp';
+                        }}
+                      />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">
+                        {user.name}
+                      </p>
+                      <p className="text-sm text-gray-500 truncate">
+                        @{user.mention}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
@@ -608,8 +670,8 @@ export default function Home() {
                 {searchMode
                   ? 'Aucun post ne correspond à votre recherche. Essayez d\'autres termes ou filtres.'
                   : activeTab === 'actualite'
-                    ? 'Aucun post dans l\'actualité'
-                    : 'Aucun post des profils suivis'}
+                    ? 'Aucun post dans l\'actualité. Revenez plus tard !'
+                    : 'Aucun post des profils suivis. Commencez à suivre d\'autres utilisateurs pour voir leurs posts ici !'}
               </div>
             ) : (
               posts.map((post) => (

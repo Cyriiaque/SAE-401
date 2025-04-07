@@ -45,7 +45,8 @@ class SettingsController extends AbstractController
             'biography' => $user->getBiography(),
             'roles' => $user->getRoles(),
             'postReload' => $user->getPostReload(),
-            'readOnly' => $user->isReadOnly()
+            'readOnly' => $user->isReadOnly(),
+            'isPrivate' => $user->isPrivate()
         ]);
     }
 
@@ -78,6 +79,16 @@ class SettingsController extends AbstractController
             $user->setReadOnly($data['readOnly']);
         }
 
+        // Mise à jour du mode privé si fourni
+        if (isset($data['isPrivate'])) {
+            if (!is_bool($data['isPrivate'])) {
+                return $this->json([
+                    'message' => 'Valeur de isPrivate invalide'
+                ], JsonResponse::HTTP_BAD_REQUEST);
+            }
+            $user->setIsPrivate($data['isPrivate']);
+        }
+
         $entityManager->flush();
 
         return $this->json([
@@ -90,7 +101,8 @@ class SettingsController extends AbstractController
             'biography' => $user->getBiography(),
             'roles' => $user->getRoles(),
             'postReload' => $user->getPostReload(),
-            'readOnly' => $user->isReadOnly()
+            'readOnly' => $user->isReadOnly(),
+            'isPrivate' => $user->isPrivate()
         ]);
     }
 }

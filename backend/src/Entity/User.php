@@ -70,6 +70,9 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     #[ORM\Column(type: 'boolean', options: ['default' => false])]
     private ?bool $read_only = false;
 
+    #[ORM\Column(type: 'boolean', options: ['default' => false])]
+    private ?bool $is_private = false;
+
     public function getId(): ?int
     {
         return $this->id;
@@ -261,6 +264,18 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     public function setReadOnly(bool $read_only): static
     {
         $this->read_only = $read_only;
+
+        return $this;
+    }
+
+    public function isPrivate(): ?bool
+    {
+        return $this->is_private;
+    }
+
+    public function setIsPrivate(bool $is_private): static
+    {
+        $this->is_private = $is_private;
 
         return $this;
     }

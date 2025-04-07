@@ -23,8 +23,14 @@ export default function Settings() {
         user?.readOnly ? true : false
     );
 
-    // État pour l'overlay d'aide
+    // État pour le mode privé
+    const [isPrivateMode, setIsPrivateMode] = useState<boolean>(
+        user?.isPrivate ? true : false
+    );
+
+    // État pour les overlays d'aide
     const [showHelpOverlay, setShowHelpOverlay] = useState<boolean>(false);
+    const [showPrivateHelpOverlay, setShowPrivateHelpOverlay] = useState<boolean>(false);
 
     // Fonction pour mettre à jour les paramètres
     const handleToggleChange = async (enabled: boolean) => {
@@ -76,6 +82,24 @@ export default function Settings() {
             setIsReadOnlyMode(enabled);
         } catch (error) {
             console.error('Erreur lors de la mise à jour du mode lecture seule', error);
+        }
+    };
+
+    // Fonction pour mettre à jour le mode privé
+    const handlePrivateToggle = async (enabled: boolean) => {
+        try {
+            const updatedUser = await updateUserSettings({ isPrivate: enabled });
+
+            // Mettre à jour l'utilisateur dans le contexte
+            setUser(updatedUser);
+
+            // Mettre à jour le localStorage
+            localStorage.setItem('user', JSON.stringify(updatedUser));
+
+            // Mettre à jour l'état local
+            setIsPrivateMode(enabled);
+        } catch (error) {
+            console.error('Erreur lors de la mise à jour du mode privé', error);
         }
     };
 
@@ -202,6 +226,80 @@ export default function Settings() {
                                     <Button
                                         variant="full"
                                         onClick={() => setShowHelpOverlay(false)}
+                                        className="px-4 py-2"
+                                    >
+                                        J'ai compris
+                                    </Button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Section Mode Privé */}
+                    <div className='mt-8 flex flex-row gap-4 items-center'>
+                        <h2 className="text-xl font-semibold">Mode Privé</h2>
+                        <div className="flex items-center">
+                            <label className="flex items-center cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={isPrivateMode}
+                                    onChange={() => handlePrivateToggle(!isPrivateMode)}
+                                    className="hidden"
+                                />
+                                <div
+                                    className={`w-10 h-6 flex items-center bg-gray-300 rounded-full p-1 transition-colors duration-300 ${isPrivateMode ? 'bg-orange-500' : 'bg-gray-300'}`}
+                                >
+                                    <div
+                                        className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-300 ${isPrivateMode ? 'translate-x-4' : ''}`}
+                                    ></div>
+                                </div>
+                            </label>
+                        </div>
+                        <button
+                            onClick={() => setShowPrivateHelpOverlay(true)}
+                            className="ml-2 text-gray-500 hover:text-gray-700"
+                            title="Aide"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                        </button>
+                    </div>
+
+                    {/* Overlay d'aide pour le mode privé */}
+                    {showPrivateHelpOverlay && (
+                        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 backdrop-blur-sm">
+                            <div className="bg-white rounded-xl shadow-xl p-6 max-w-md mx-4 relative">
+                                <button
+                                    onClick={() => setShowPrivateHelpOverlay(false)}
+                                    className="absolute top-4 right-4 text-gray-500 hover:text-gray-700"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                                <h3 className="text-xl font-bold mb-4">Mode Privé</h3>
+                                <div className="space-y-4 text-gray-700">
+                                    <p>
+                                        Lorsque le mode privé est activé, vos posts bénéficient d'une visibilité limitée.
+                                    </p>
+                                    <p>
+                                        Les avantages du mode privé :
+                                    </p>
+                                    <ul className="list-disc pl-5 space-y-2">
+                                        <li>Vos posts n'apparaissent pas dans le fil d'actualité public</li>
+                                        <li>Seuls vos abonnés peuvent voir vos posts dans leur fil "Suivis"</li>
+                                        <li>Personne ne peut repartager ou republier vos posts</li>
+                                        <li>Contrôle accru sur la diffusion de votre contenu</li>
+                                    </ul>
+                                    <p>
+                                        Ce mode est idéal si vous souhaitez partager du contenu uniquement avec un cercle restreint de personnes.
+                                    </p>
+                                </div>
+                                <div className="mt-6 flex justify-end">
+                                    <Button
+                                        variant="full"
+                                        onClick={() => setShowPrivateHelpOverlay(false)}
                                         className="px-4 py-2"
                                     >
                                         J'ai compris

@@ -78,6 +78,16 @@ export default function UserProfile({ userId, onClose }: UserProfileProps) {
                 const postsData = await fetchUserPosts(userId);
                 setPosts(postsData.posts);
 
+                // Vérifier si le paramètre is_private est renvoyé par l'API
+                // @ts-ignore - La propriété is_private est ajoutée côté serveur
+                if (postsData.is_private) {
+                    // Si le compte est privé, forcer l'état isPrivate à true quelle que soit la valeur dans userData
+                    setUser(prev => ({
+                        ...prev!,
+                        isPrivate: true
+                    }));
+                }
+
                 // Vérifier le statut de suivi
                 if (currentUser && currentUser.id !== userId) {
                     const followStatus = await checkFollowStatus(userId);
@@ -126,6 +136,12 @@ export default function UserProfile({ userId, onClose }: UserProfileProps) {
                 // Suivre directement
                 const result = await toggleFollow(userId);
                 setIsFollowing(result.isFollowing);
+
+                // Recharger les posts si l'utilisateur est en mode privé et qu'on vient de le suivre
+                if (result.isFollowing && user?.isPrivate) {
+                    const postsData = await fetchUserPosts(userId);
+                    setPosts(postsData.posts);
+                }
             }
         } catch (error) {
             console.error('Erreur lors du changement de statut de suivi:', error);
@@ -153,6 +169,12 @@ export default function UserProfile({ userId, onClose }: UserProfileProps) {
         try {
             const result = await toggleFollow(userId);
             setIsFollowing(result.isFollowing);
+
+            // Si on ne suit plus un utilisateur privé, vider les posts
+            if (!result.isFollowing && user?.isPrivate) {
+                setPosts([]);
+            }
+
             setConfirmUnfollowOpen(false);
         } catch (error) {
             console.error('Erreur lors du désabonnement:', error);
@@ -331,6 +353,18 @@ export default function UserProfile({ userId, onClose }: UserProfileProps) {
                         {isBlocked
                             ? "Vous avez bloqué cet utilisateur. Ses posts ne sont pas visibles."
                             : "Vous êtes bloqué par cet utilisateur. Ses posts ne sont pas visibles."}
+                    </div>
+                ) : user.isPrivate && (!currentUser || user.id !== currentUser.id && !isFollowing) ? (
+                    <div className="p-8 text-center">
+                        <div className="mb-4">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mx-auto text-gray-400" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
+                            </svg>
+                        </div>
+                        <h3 className="text-lg font-medium text-gray-900">Ce compte est privé</h3>
+                        <p className="mt-2 text-gray-500">
+                            Suivez cet utilisateur pour voir ses posts.
+                        </p>
                     </div>
                 ) : (
                     <>

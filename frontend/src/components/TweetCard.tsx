@@ -163,6 +163,7 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
   const [userHasReplied, setUserHasReplied] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isBlockedByAuthor, setIsBlockedByAuthor] = useState<boolean>(false);
+  const [isOriginalUserPrivate, setIsOriginalUserPrivate] = useState<boolean>(false);
   const replyInputRef = useRef<HTMLTextAreaElement>(null);
   const replyFormRef = useRef<HTMLDivElement>(null);
   const [displayedRepliesCount, setDisplayedRepliesCount] = useState<number>(3);
@@ -196,6 +197,27 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
   useEffect(() => {
     setCurrentTweet(tweet);
     setFormattedContent(formatContent(tweet.content));
+
+    // Vérifier si l'utilisateur original a un compte privé
+    const originalUser = tweet.isRetweet && tweet.originalUser
+      ? tweet.originalUser
+      : tweet.user;
+
+    // Vérifier si l'utilisateur original a un compte privé en utilisant une approche sûre avec TypeScript
+    if (originalUser) {
+      // Utiliser une conversion explicite pour accéder à is_private
+      const userObj = originalUser as any;
+      const userIsPrivate =
+        userObj.isPrivate === true ||
+        userObj.is_private === true;
+
+      setIsOriginalUserPrivate(userIsPrivate);
+
+      // Log pour debug
+      console.log("isOriginalUserPrivate défini à:", userIsPrivate, "à partir de:", userObj);
+    } else {
+      setIsOriginalUserPrivate(false);
+    }
   }, [tweet]);
 
   useEffect(() => {
@@ -601,6 +623,14 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
       setTimeout(() => setErrorMessage(null), 3000);
       return;
     }
+
+    // Déterminer l'utilisateur à l'origine du post
+    const originalUser = tweet.isRetweet && tweet.originalPost && tweet.originalPost.user
+      ? tweet.originalPost.user
+      : tweet.user;
+
+    // Afficher l'utilisateur à l'origine du post dans la console
+    console.log("Utilisateur à l'origine du post:", originalUser);
 
     // Ouvrir la modale avec le bon contexte
     // Si c'est un retweet, on doit afficher le post original
@@ -1531,6 +1561,16 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
         title="Retweeter"
       >
         <div className="p-4">
+          {isOriginalUserPrivate && (
+            <div className="mb-4 p-3 bg-light-orange border border-orange rounded-lg text-dark-orange text-sm">
+              <div className="flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-[#F05E1D]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+                <span>Le compte à l'origine de ce post est privé, la visualisation sera restreinte sur votre republication</span>
+              </div>
+            </div>
+          )}
           <div className="mb-4 flex space-x-3 border-b pb-4 text-sm">
             <img
               src={
@@ -1663,6 +1703,7 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
                 </svg>
                 Retweeter
               </Button>
+
             </div>
           </div>
         </div>

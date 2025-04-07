@@ -17,6 +17,7 @@ export interface User {
     postReload: number;
     isbanned: boolean;
     readOnly?: boolean;
+    isPrivate?: boolean;
 }
 
 // Types pour l'authentification
@@ -54,6 +55,7 @@ export interface Tweet {
     isPinned?: boolean;
     retweets?: number; // Nombre de retweets
     isRetweet?: boolean; // Si c'est un retweet
+    user?: User; // Informations sur l'utilisateur qui a créé le post
     originalPost?: { // Le post original retourné par l'API
         id: number | null;
         content: string;
@@ -357,7 +359,7 @@ export async function getLikeStatus(postId: number): Promise<{ likes: number; is
     return response.json();
 }
 
-export async function fetchUserPosts(userId: number): Promise<{ posts: Tweet[] }> {
+export async function fetchUserPosts(userId: number): Promise<{ posts: Tweet[], is_private?: boolean }> {
     const token = localStorage.getItem('token');
     if (!token) {
         throw new Error('Non authentifié');
@@ -1083,16 +1085,23 @@ export async function fetchUsersByQuery(query: string): Promise<User[]> {
         throw new Error('Non authentifié');
     }
 
-    // Recherche côté client uniquement
     try {
-        // Récupérer tous les utilisateurs
-        const allUsers = await fetchUsers();
+        const response = await fetch(`${API_BASE_URL}/users?query=${encodeURIComponent(query)}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+            }
+        });
 
-        // Filtrer les utilisateurs qui correspondent à la recherche
-        return allUsers.filter(user =>
-            (user.mention && user.mention.toLowerCase().includes(query.toLowerCase())) ||
-            (user.name && user.name.toLowerCase().includes(query.toLowerCase()))
-        );
+        if (!response.ok) {
+            if (response.status === 401) {
+                logout();
+                throw new Error('Session expirée');
+            }
+            throw new Error('Erreur lors de la recherche des utilisateurs');
+        }
+
+        return await response.json();
     } catch (error) {
         console.error("Erreur lors de la recherche d'utilisateurs:", error);
         throw new Error("Erreur lors de la recherche des utilisateurs");
