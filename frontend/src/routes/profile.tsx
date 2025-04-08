@@ -7,6 +7,7 @@ import Sidebar from '../components/Sidebar';
 import ConfirmModal from '../components/ConfirmModal';
 import EditProfileModal from '../components/EditProfileModal';
 import Header from '../components/Header';
+import { FollowRequests } from '../components/FollowRequests';
 import {
     fetchUserPosts,
     Tweet,
@@ -15,7 +16,8 @@ import {
     getImageUrl,
     fetchBlockedUsers,
     toggleBlockUser,
-    togglePinPost
+    togglePinPost,
+    getFollowRequests
 } from '../lib/loaders';
 import UserProfile from '../components/UserProfile';
 import { User } from '../lib/loaders';
@@ -79,6 +81,9 @@ export default function Profile() {
     const [loadingBlockedUsers, setLoadingBlockedUsers] = useState(false);
     const [pinnedPost, setPinnedPost] = useState<Tweet | null>(null);
     const [regularPosts, setRegularPosts] = useState<Tweet[]>([]);
+    const [showFollowRequests, setShowFollowRequests] = useState(false);
+    const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
+    const [loadingRequests, setLoadingRequests] = useState(false);
 
     const loadPosts = async () => {
         if (!user) return;
@@ -252,6 +257,20 @@ export default function Profile() {
         }
     };
 
+    const loadFollowRequests = async () => {
+        if (!user) return;
+
+        setLoadingRequests(true);
+        try {
+            const data = await getFollowRequests(user.id);
+            setPendingRequestsCount(data.followRequests.length);
+        } catch (error) {
+            console.error('Erreur lors du chargement des demandes d\'abonnement:', error);
+        } finally {
+            setLoadingRequests(false);
+        }
+    };
+
     useEffect(() => {
         if (user) {
             // Mettre à jour la biographie formatée
@@ -259,6 +278,9 @@ export default function Profile() {
 
             // Recharger les posts
             loadPosts();
+
+            // Charger les demandes d'abonnement
+            loadFollowRequests();
         }
     }, [user]);
 
@@ -334,6 +356,22 @@ export default function Profile() {
                 <div className="max-w-2xl mx-auto">
                     <Header title="Profil">
                         <div className="flex items-center space-x-2">
+                            <Button
+                                onClick={() => setShowFollowRequests(true)}
+                                variant="outline"
+                                className="p-2 lg:flex lg:items-center lg:gap-2 relative"
+                                title="Demandes d'abonnement"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                                </svg>
+                                <span className="hidden lg:inline">Demandes d'abonnement</span>
+                                {pendingRequestsCount > 0 && (
+                                    <span className="absolute -top-1 -right-1 flex items-center justify-center w-5 h-5 text-xs bg-red-500 text-white rounded-full">
+                                        {pendingRequestsCount}
+                                    </span>
+                                )}
+                            </Button>
                             <Button
                                 onClick={() => setIsEditProfileModalOpen(true)}
                                 variant="outline"
@@ -562,6 +600,31 @@ export default function Profile() {
                             userId={selectedUserId}
                             onClose={handleCloseUserProfile}
                         />
+                    </div>
+                </div>
+            )}
+
+            {/* Modal des demandes d'abonnement */}
+            {showFollowRequests && (
+                <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center backdrop-blur-sm overflow-y-auto">
+                    <div className="w-full max-w-2xl mx-auto my-auto bg-white rounded-lg shadow-xl">
+                        <div className="p-4 border-b border-gray-200 flex justify-between items-center">
+                            <h2 className="text-xl font-semibold">Demandes d'abonnement</h2>
+                            <button
+                                onClick={() => {
+                                    setShowFollowRequests(false);
+                                    loadFollowRequests(); // Rafraîchir le compteur après fermeture
+                                }}
+                                className="p-2 hover:bg-gray-100 rounded-full"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        </div>
+                        <div className="p-4">
+                            <FollowRequests />
+                        </div>
                     </div>
                 </div>
             )}

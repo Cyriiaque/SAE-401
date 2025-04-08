@@ -7,6 +7,8 @@
   --color-dark-orange: #D84E1A;
   --color-soft-orange: #ff8c52;
   --color-light-orange: #FFDBC9;
+  --color-green: #4CAF50;
+  --color-red: #DC2626;
   
   --color-light: var(--color-white);
   --color-dark: var(--color-black);

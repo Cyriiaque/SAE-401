@@ -47,7 +47,7 @@ class Notifications
     private ?bool $is_read = false;
 
     /**
-     * Indique si la notification a été validée (par exemple pour une demande d'abonnement)
+     * Indique si la notification a été validée (pour les demandes d'abonnement)
      */
     #[ORM\Column(type: 'boolean', nullable: true)]
     private ?bool $is_validated = null;

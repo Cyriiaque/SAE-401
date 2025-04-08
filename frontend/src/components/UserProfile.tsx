@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import Button from '../ui/buttons';
 import TweetCard from './TweetCard';
 import ConfirmModal from './ConfirmModal';
+import { FollowRequests } from './FollowRequests';
 
 function formatContent(content: string): string {
     let maxLength;
@@ -61,10 +62,12 @@ export default function UserProfile({ userId, onClose }: UserProfileProps) {
     const [loading, setLoading] = useState(true);
     const [formattedBiography, setFormattedBiography] = useState('');
     const [isFollowing, setIsFollowing] = useState(false);
+    const [isPending, setIsPending] = useState(false);
     const [confirmUnfollowOpen, setConfirmUnfollowOpen] = useState(false);
     const [isBlocked, setIsBlocked] = useState(false);
     const [isBlockedByUser, setIsBlockedByUser] = useState(false);
     const [confirmBlockOpen, setConfirmBlockOpen] = useState(false);
+    const [showFollowRequests, setShowFollowRequests] = useState(false);
 
     useEffect(() => {
         const loadUserProfile = async () => {
@@ -92,6 +95,7 @@ export default function UserProfile({ userId, onClose }: UserProfileProps) {
                 if (currentUser && currentUser.id !== userId) {
                     const followStatus = await checkFollowStatus(userId);
                     setIsFollowing(followStatus.isFollowing);
+                    setIsPending(followStatus.isPending);
                     setIsBlockedByUser(followStatus.isBlockedByTarget);
 
                     // Vérifier le statut de blocage
@@ -132,10 +136,16 @@ export default function UserProfile({ userId, onClose }: UserProfileProps) {
             if (isFollowing) {
                 // Ouvrir la modal de confirmation pour ne plus suivre
                 setConfirmUnfollowOpen(true);
+            } else if (isPending) {
+                // Si en attente, annuler la demande
+                const result = await toggleFollow(userId);
+                setIsPending(result.isPending);
+                setIsFollowing(result.isFollowing);
             } else {
                 // Suivre directement
                 const result = await toggleFollow(userId);
                 setIsFollowing(result.isFollowing);
+                setIsPending(result.isPending);
 
                 // Recharger les posts si l'utilisateur est en mode privé et qu'on vient de le suivre
                 if (result.isFollowing && user?.isPrivate) {
@@ -169,6 +179,7 @@ export default function UserProfile({ userId, onClose }: UserProfileProps) {
         try {
             const result = await toggleFollow(userId);
             setIsFollowing(result.isFollowing);
+            setIsPending(result.isPending);
 
             // Si on ne suit plus un utilisateur privé, vider les posts
             if (!result.isFollowing && user?.isPrivate) {
@@ -286,10 +297,10 @@ export default function UserProfile({ userId, onClose }: UserProfileProps) {
                         {currentUser && currentUser.id !== userId && !isBlockedByUser && (
                             <div className="flex flex-col sm:flex-row gap-2">
                                 <Button
-                                    variant={isFollowing ? "outline" : "full"}
+                                    variant={isFollowing || isPending ? "outline" : "full"}
                                     onClick={handleToggleFollow}
                                     className="flex items-center justify-center space-x-2"
-                                    disabled={isBlocked} // Désactiver le bouton de suivi si l'utilisateur est bloqué
+                                    disabled={isBlocked}
                                 >
                                     {isFollowing ? (
                                         <>
@@ -297,6 +308,13 @@ export default function UserProfile({ userId, onClose }: UserProfileProps) {
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
                                             </svg>
                                             <span>Ne plus suivre</span>
+                                        </>
+                                    ) : isPending ? (
+                                        <>
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            </svg>
+                                            <span>En attente...</span>
                                         </>
                                     ) : (
                                         <>
@@ -330,6 +348,18 @@ export default function UserProfile({ userId, onClose }: UserProfileProps) {
                                     )}
                                 </Button>
                             </div>
+                        )}
+                        {currentUser && currentUser.id === userId && (
+                            <Button
+                                variant="outline"
+                                onClick={() => setShowFollowRequests(true)}
+                                className="flex items-center justify-center space-x-2"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                                </svg>
+                                <span>Demandes d'abonnement</span>
+                            </Button>
                         )}
                         {currentUser && currentUser.id !== userId && isBlockedByUser && (
                             <div className="flex items-center text-red-500">
@@ -407,6 +437,28 @@ export default function UserProfile({ userId, onClose }: UserProfileProps) {
                 confirmText="Bloquer"
                 variant="danger"
             />
+
+            {/* Modal des demandes d'abonnement */}
+            {showFollowRequests && (
+                <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center backdrop-blur-sm overflow-y-auto">
+                    <div className="w-full max-w-2xl mx-auto my-auto bg-white rounded-lg shadow-xl">
+                        <div className="p-4 border-b border-gray-200 flex justify-between items-center">
+                            <h2 className="text-xl font-semibold">Demandes d'abonnement</h2>
+                            <button
+                                onClick={() => setShowFollowRequests(false)}
+                                className="p-2 hover:bg-gray-100 rounded-full"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        </div>
+                        <div className="p-4">
+                            <FollowRequests />
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 } 

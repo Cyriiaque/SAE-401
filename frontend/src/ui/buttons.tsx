@@ -13,7 +13,7 @@ const buttonVariants = cva("rounded-full font-bold focus:outline-none transition
       notallowed:
         "bg-soft-orange text-white cursor-not-allowed",
       danger:
-        "bg-red-500 text-white hover:bg-red-600 focus:bg-red-600 disabled:hover:bg-red-500",
+        "bg-red-500 text-white hover:bg-red focus:bg-red disabled:hover:bg-red-500",
     },
     size: {
       default: "h-10 px-4 py-2",

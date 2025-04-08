@@ -27,6 +27,9 @@ class UserInteraction
     #[ORM\Column(type: 'boolean', options: ['default' => false])]
     private ?bool $isBlocked = false;
 
+    #[ORM\Column(type: 'boolean', options: ['default' => false])]
+    private ?bool $pending = false;
+
     public function getId(): ?int
     {
         return $this->id;
@@ -76,6 +79,18 @@ class UserInteraction
     public function setIsBlocked(bool $isBlocked): static
     {
         $this->isBlocked = $isBlocked;
+
+        return $this;
+    }
+
+    public function isPending(): ?bool
+    {
+        return $this->pending;
+    }
+
+    public function setPending(bool $pending): static
+    {
+        $this->pending = $pending;
 
         return $this;
     }

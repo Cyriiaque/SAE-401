@@ -616,49 +616,50 @@ export async function fetchUserProfile(userId: number): Promise<User> {
     return response.json();
 }
 
-export async function checkFollowStatus(targetUserId: number): Promise<{ isFollowing: boolean, isBlockedByTarget: boolean }> {
+export async function checkFollowStatus(userId: number): Promise<{ isFollowing: boolean; isBlockedByTarget: boolean; isPending: boolean; isPrivate: boolean }> {
     const token = localStorage.getItem('token');
     if (!token) {
         throw new Error('Non authentifié');
     }
 
-    const response = await fetch(`${API_BASE_URL}/users/${targetUserId}/follow-status`, {
-        method: 'GET',
+    const response = await fetch(`${API_BASE_URL}/users/${userId}/follow-status`, {
         headers: {
             'Authorization': `Bearer ${token}`
         }
     });
 
+    if (response.status === 401) {
+        localStorage.removeItem('token');
+        throw new Error('Session expirée');
+    }
+
     if (!response.ok) {
-        if (response.status === 401) {
-            logout();
-            throw new Error('Session expirée');
-        }
         throw new Error('Erreur lors de la vérification du statut de suivi');
     }
 
     return response.json();
 }
 
-export async function toggleFollow(targetUserId: number): Promise<{ isFollowing: boolean }> {
+export async function toggleFollow(userId: number): Promise<{ isFollowing: boolean; isPending: boolean }> {
     const token = localStorage.getItem('token');
     if (!token) {
         throw new Error('Non authentifié');
     }
 
-    const response = await fetch(`${API_BASE_URL}/users/${targetUserId}/toggle-follow`, {
+    const response = await fetch(`${API_BASE_URL}/users/${userId}/toggle-follow`, {
         method: 'POST',
         headers: {
             'Authorization': `Bearer ${token}`
         }
     });
 
+    if (response.status === 401) {
+        localStorage.removeItem('token');
+        throw new Error('Session expirée');
+    }
+
     if (!response.ok) {
-        if (response.status === 401) {
-            logout();
-            throw new Error('Session expirée');
-        }
-        throw new Error('Erreur lors du changement de statut de suivi');
+        throw new Error('Erreur lors de la modification du statut de suivi');
     }
 
     return response.json();
@@ -1284,6 +1285,70 @@ export async function searchNotifications(query: string): Promise<{ notification
             throw new Error('Session expirée');
         }
         throw new Error('Erreur lors de la recherche de notifications');
+    }
+
+    return response.json();
+}
+
+export async function getFollowRequests(userId: number): Promise<{
+    followRequests: Array<{
+        id: number;
+        user: {
+            id: number;
+            name: string;
+            mention: string;
+            avatar: string | null;
+        };
+        created_at: string;
+    }>
+}> {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('Non authentifié');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/users/${userId}/follow-requests`, {
+        headers: {
+            'Authorization': `Bearer ${token}`
+        }
+    });
+
+    if (response.status === 401) {
+        localStorage.removeItem('token');
+        throw new Error('Session expirée');
+    }
+
+    if (!response.ok) {
+        throw new Error('Erreur lors de la récupération des demandes d\'abonnement');
+    }
+
+    return response.json();
+}
+
+export async function respondToFollowRequest(requestId: number, accepted: boolean): Promise<{ accepted: boolean; message: string }> {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('Non authentifié');
+    }
+
+    // L'ID de la notification est différent de l'ID de l'interaction
+    // Nous devons d'abord récupérer l'ID de l'interaction associée à cette notification
+    const response = await fetch(`${API_BASE_URL}/users/follow-requests/${requestId}/respond`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ accepted })
+    });
+
+    if (response.status === 401) {
+        localStorage.removeItem('token');
+        throw new Error('Session expirée');
+    }
+
+    if (!response.ok) {
+        throw new Error('Erreur lors de la réponse à la demande d\'abonnement');
     }
 
     return response.json();
