@@ -22,6 +22,8 @@ const EditProfileModal = ({
     const [banner, setBanner] = useState<File | null>(null);
     const [avatarPreview, setAvatarPreview] = useState<string | null>(getImageUrl(user.avatar));
     const [bannerPreview, setBannerPreview] = useState<string | null>(getImageUrl(user.banner));
+    const [isPrivate, setIsPrivate] = useState(user.isPrivate || false);
+    const [followerRestriction, setFollowerRestriction] = useState(user.followerRestriction || false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [imageImportType, setImageImportType] = useState<'avatar' | 'banner' | null>(null);
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -198,28 +200,32 @@ const EditProfileModal = ({
         setNameError('');
         setMentionError('');
 
-        // Vérifier la longueur du nom et de la mention
-        let hasError = false;
-        if (name.length > 20) {
-            setNameError('Le nom ne doit pas dépasser 20 caractères');
-            hasError = true;
-        }
-        if (mention.length > 20) {
-            setMentionError('La mention ne doit pas dépasser 20 caractères');
-            hasError = true;
+        let validForm = true;
+
+        // Validation de base
+        if (!name || name.trim() === '') {
+            setNameError('Le nom ne peut pas être vide');
+            validForm = false;
         }
 
-        // Si des erreurs existent, arrêter la soumission
-        if (hasError) {
+        if (!mention || mention.trim() === '') {
+            setMentionError('Le nom d\'utilisateur ne peut pas être vide');
+            validForm = false;
+        }
+
+        if (!validForm) {
             setIsSubmitting(false);
             return;
         }
 
         try {
-            const updatedUser: Partial<User> = {
+            // Préparation des données de base
+            const userData: Partial<User> = {
                 name,
                 mention,
-                biography
+                biography,
+                isPrivate,
+                followerRestriction
             };
 
             // Gérer l'upload de l'avatar
@@ -241,7 +247,7 @@ const EditProfileModal = ({
                 }
 
                 const result = await response.json();
-                updatedUser.avatar = result.filename;
+                userData.avatar = result.filename;
             }
 
             // Gérer l'upload de la bannière
@@ -263,25 +269,27 @@ const EditProfileModal = ({
                 }
 
                 const result = await response.json();
-                updatedUser.banner = result.filename;
+                userData.banner = result.filename;
             }
 
-            // Mettre à jour toutes les informations dans le localStorage
-            const storedUser = JSON.parse(localStorage.getItem('user') || '{}');
-            const finalUpdatedUser = {
-                ...storedUser,
-                name: updatedUser.name || storedUser.name,
-                mention: updatedUser.mention || storedUser.mention,
-                biography: updatedUser.biography || storedUser.biography,
-                avatar: updatedUser.avatar || storedUser.avatar,
-                banner: updatedUser.banner || storedUser.banner
-            };
-            localStorage.setItem('user', JSON.stringify(finalUpdatedUser));
+            // Appel à la fonction pour sauvegarder les modifications
+            await onSave(userData);
 
-            // Mettre à jour l'utilisateur dans le contexte
-            setUser(finalUpdatedUser);
+            // Mise à jour des infos locales de l'utilisateur si succès
+            setUser(prev => {
+                if (!prev) return null;
+                return {
+                    ...prev,
+                    name,
+                    mention,
+                    biography,
+                    isPrivate,
+                    followerRestriction,
+                    avatar: avatarPreview ? user.avatar : prev.avatar,
+                    banner: bannerPreview ? user.banner : prev.banner
+                };
+            });
 
-            await onSave(updatedUser);
             onClose();
         } catch (error) {
             console.error('Erreur lors de la mise à jour du profil:', error);
@@ -449,6 +457,44 @@ const EditProfileModal = ({
                                 className="w-full p-2 border rounded"
                                 rows={4}
                             />
+                        </div>
+
+                        {/* Option Compte Privé */}
+                        <div className="mb-4">
+                            <div className="flex items-center space-x-2">
+                                <input
+                                    type="checkbox"
+                                    id="private-account"
+                                    checked={isPrivate}
+                                    onChange={(e) => setIsPrivate(e.target.checked)}
+                                    className="h-4 w-4 text-orange focus:ring-orange rounded"
+                                />
+                                <label htmlFor="private-account" className="text-gray-700">
+                                    Compte privé
+                                </label>
+                            </div>
+                            <p className="text-gray-500 text-xs ml-6">
+                                Lorsque cette option est activée, seuls vos abonnés peuvent voir vos posts.
+                            </p>
+                        </div>
+
+                        {/* Option Restriction des réponses */}
+                        <div className="mb-4">
+                            <div className="flex items-center space-x-2">
+                                <input
+                                    type="checkbox"
+                                    id="follower-restriction"
+                                    checked={followerRestriction}
+                                    onChange={(e) => setFollowerRestriction(e.target.checked)}
+                                    className="h-4 w-4 text-orange focus:ring-orange rounded"
+                                />
+                                <label htmlFor="follower-restriction" className="text-gray-700">
+                                    Limiter les réponses aux abonnés
+                                </label>
+                            </div>
+                            <p className="text-gray-500 text-xs ml-6">
+                                Lorsque cette option est activée, seuls vos abonnés peuvent répondre à vos posts.
+                            </p>
                         </div>
                     </div>
 

@@ -113,6 +113,9 @@ class UserController extends AbstractController
         if (isset($data['isPrivate'])) {
             $user->setIsPrivate($data['isPrivate']);
         }
+        if (isset($data['followerRestriction'])) {
+            $user->setFollowerRestriction($data['followerRestriction']);
+        }
 
         $entityManager->flush();
 
@@ -128,7 +131,8 @@ class UserController extends AbstractController
             'isbanned' => $user->isbanned(),
             'postReload' => $user->getPostReload(),
             'isVerified' => $user->isVerified(),
-            'isPrivate' => $user->isPrivate()
+            'isPrivate' => $user->isPrivate(),
+            'followerRestriction' => $user->hasFollowerRestriction()
         ]);
     }
 
@@ -185,7 +189,8 @@ class UserController extends AbstractController
             'biography' => $user->getBiography(),
             'roles' => $user->getRoles(),
             'isbanned' => $user->isbanned(),
-            'isPrivate' => $user->isPrivate()
+            'isPrivate' => $user->isPrivate(),
+            'followerRestriction' => $user->hasFollowerRestriction()
         ]);
     }
 }

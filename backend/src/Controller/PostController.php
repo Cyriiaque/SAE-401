@@ -879,7 +879,8 @@ class PostController extends AbstractController
                 'avatar' => $user->getAvatar(),
                 'isbanned' => $user->isbanned(),
                 'readOnly' => $user->isReadOnly(),
-                'isPrivate' => $user->isPrivate()
+                'isPrivate' => $user->isPrivate(),
+                'followerRestriction' => $user->hasFollowerRestriction()
             ];
         } else {
             $postData['user'] = null;

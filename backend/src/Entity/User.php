@@ -73,6 +73,9 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     #[ORM\Column(type: 'boolean', options: ['default' => false])]
     private ?bool $is_private = false;
 
+    #[ORM\Column(type: 'boolean', options: ['default' => false])]
+    private ?bool $follower_restriction = false;
+
     public function getId(): ?int
     {
         return $this->id;
@@ -276,6 +279,18 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     public function setIsPrivate(bool $is_private): static
     {
         $this->is_private = $is_private;
+
+        return $this;
+    }
+
+    public function hasFollowerRestriction(): ?bool
+    {
+        return $this->follower_restriction;
+    }
+
+    public function setFollowerRestriction(bool $follower_restriction): static
+    {
+        $this->follower_restriction = $follower_restriction;
 
         return $this;
     }

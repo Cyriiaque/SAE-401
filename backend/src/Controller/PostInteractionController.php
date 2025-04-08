@@ -169,6 +169,21 @@ class PostInteractionController extends AbstractController
             return $this->json(['message' => 'Ce compte est en mode lecture seule. Les réponses sont désactivées.'], Response::HTTP_FORBIDDEN);
         }
 
+        // Vérifier si l'auteur a activé la restriction des réponses aux abonnés
+        if ($postAuthor && $postAuthor->hasFollowerRestriction() && $postAuthor->getId() !== $user->getId()) {
+            // Vérifier si l'utilisateur actuel suit l'auteur du post
+            $followStatus = $userInteractionRepository->findOneBy([
+                'source' => $user,
+                'target' => $postAuthor,
+                'follow' => true
+            ]);
+
+            // Si l'utilisateur ne suit pas l'auteur, empêcher la réponse
+            if (!$followStatus) {
+                return $this->json(['message' => 'Seuls les abonnés peuvent répondre aux posts de cet utilisateur.'], Response::HTTP_FORBIDDEN);
+            }
+        }
+
         // Vérifier si l'utilisateur a déjà une interaction avec ce post
         $interaction = $interactionRepository->findOneBy([
             'user' => $user,

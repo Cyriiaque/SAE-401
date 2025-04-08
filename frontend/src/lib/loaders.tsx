@@ -18,6 +18,7 @@ export interface User {
     isbanned: boolean;
     readOnly?: boolean;
     isPrivate?: boolean;
+    followerRestriction?: boolean;
 }
 
 // Types pour l'authentification
@@ -84,6 +85,8 @@ export interface Tweet {
         avatar: string | null;
         isbanned?: boolean;
         readOnly?: boolean;
+        isPrivate?: boolean;
+        followerRestriction?: boolean;
     } | null;
 }
 

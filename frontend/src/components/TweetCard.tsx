@@ -171,6 +171,9 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
   const navigate = useNavigate();
   const containerRef = useRef<HTMLDivElement>(null);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState<boolean>(false);
+  // État pour suivre si l'utilisateur est un abonné de l'auteur du post
+  const [isFollowing, setIsFollowing] = useState<boolean>(false);
+  const [checkingFollowStatus, setCheckingFollowStatus] = useState<boolean>(false);
 
   // Nouvelle logique pour gérer les utilisateurs bannis
   const isBanned = tweet.user?.isbanned ?? false;
@@ -1100,6 +1103,23 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
     );
   };
 
+  // Vérifier si l'utilisateur est un abonné de l'auteur
+  useEffect(() => {
+    if (user && tweet.user && tweet.user.id !== user.id && !isBlockedByAuthor) {
+      setCheckingFollowStatus(true);
+      checkFollowStatus(tweet.user.id)
+        .then(res => {
+          setIsFollowing(res.isFollowing);
+        })
+        .catch(err => {
+          console.error("Erreur lors de la vérification du statut d'abonnement:", err);
+        })
+        .finally(() => {
+          setCheckingFollowStatus(false);
+        });
+    }
+  }, [user, tweet.user, isBlockedByAuthor]);
+
   return (
     <div className="border-b border-gray-300">
       {errorMessage && (
@@ -1486,60 +1506,65 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
           <div className="absolute left-10 top-0 w-[2px] h-full bg-gray-300"></div>
 
           {/* Si l'utilisateur n'a pas répondu et est connecté, on affiche le formulaire de réponse */}
-          {user && !userHasReplied && !isBlockedByAuthor && !isReadOnly && (
-            <div ref={replyFormRef} className="relative pt-2">
-              {/* Barre horizontale */}
-              <div className="absolute left-6.5 top-6 h-[2px] w-6 bg-gray-300"></div>
+          {user &&
+            !userHasReplied &&
+            !isBlockedByAuthor &&
+            !isReadOnly &&
+            // Ne pas afficher le formulaire si les réponses sont limitées aux abonnés et que l'utilisateur n'est pas abonné
+            !(tweet.user?.followerRestriction && !isFollowing && tweet.user.id !== user.id) && (
+              <div ref={replyFormRef} className="relative pt-2">
+                {/* Barre horizontale */}
+                <div className="absolute left-6.5 top-6 h-[2px] w-6 bg-gray-300"></div>
 
-              <div className="pl-15 relative">
-                <div className="relative mb-2">
-                  <img
-                    src={user.avatar ? getImageUrl(user.avatar) : '/default_pp.webp'}
-                    alt={user.name || 'Avatar par défaut'}
-                    className="h-10 w-10 rounded-full object-cover"
-                  />
-                </div>
-
-                <form onSubmit={handleSubmitReply} className="w-full">
-                  <div className="relative">
-                    <textarea
-                      ref={replyInputRef}
-                      value={replyContent}
-                      onChange={(e) => setReplyContent(e.target.value)}
-                      placeholder="Écrivez votre réponse..."
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange resize-none"
-                      rows={2}
-                      maxLength={280}
+                <div className="pl-15 relative">
+                  <div className="relative mb-2">
+                    <img
+                      src={user.avatar ? getImageUrl(user.avatar) : '/default_pp.webp'}
+                      alt={user.name || 'Avatar par défaut'}
+                      className="h-10 w-10 rounded-full object-cover"
                     />
                   </div>
 
-                  <div className="mt-2 flex justify-between items-center">
-                    <span className={`text-sm ${replyContent.length > 250 ? 'text-red-500' : 'text-gray-500'}`}>
-                      {replyContent.length}/280
-                    </span>
-                    <div className="flex space-x-2">
-                      <Button
-                        type="submit"
-                        disabled={!replyContent.trim() || isSubmittingReply}
-                        variant={!replyContent.trim() || isSubmittingReply ? "notallowed" : "full"}
-                        size="sm"
-                        className="w-full"
-                      >
-                        {isSubmittingReply ? (
-                          <span className="flex items-center space-x-1">
-                            <div className="w-3 h-3 border-t-2 border-b-2 border-white rounded-full animate-spin"></div>
-                            <span>Envoi...</span>
-                          </span>
-                        ) : (
-                          'Répondre'
-                        )}
-                      </Button>
+                  <form onSubmit={handleSubmitReply} className="w-full">
+                    <div className="relative">
+                      <textarea
+                        ref={replyInputRef}
+                        value={replyContent}
+                        onChange={(e) => setReplyContent(e.target.value)}
+                        placeholder="Écrivez votre réponse..."
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange resize-none"
+                        rows={2}
+                        maxLength={280}
+                      />
                     </div>
-                  </div>
-                </form>
+
+                    <div className="mt-2 flex justify-between items-center">
+                      <span className={`text-sm ${replyContent.length > 250 ? 'text-red-500' : 'text-gray-500'}`}>
+                        {replyContent.length}/280
+                      </span>
+                      <div className="flex space-x-2">
+                        <Button
+                          type="submit"
+                          disabled={!replyContent.trim() || isSubmittingReply}
+                          variant={!replyContent.trim() || isSubmittingReply ? "notallowed" : "full"}
+                          size="sm"
+                          className="w-full"
+                        >
+                          {isSubmittingReply ? (
+                            <span className="flex items-center space-x-1">
+                              <div className="w-3 h-3 border-t-2 border-b-2 border-white rounded-full animate-spin"></div>
+                              <span>Envoi...</span>
+                            </span>
+                          ) : (
+                            'Répondre'
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  </form>
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
           {/* Message si l'utilisateur est bloqué par l'auteur */}
           {isBlockedByAuthor && (
@@ -1552,6 +1577,13 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
           {isReadOnly && (
             <div className="p-4 my-2 bg-blue-50 rounded-lg text-center text-blue-600">
               <p>Ce compte est en mode lecture seule. Les réponses sont désactivées.</p>
+            </div>
+          )}
+
+          {/* Message si les réponses sont limitées aux abonnés */}
+          {tweet.user?.followerRestriction && !isFollowing && tweet.user.id !== user?.id && (
+            <div className="p-4 my-2 bg-orange-50 rounded-lg text-center text-orange-600">
+              <p>Seuls les abonnés peuvent répondre aux posts de cet utilisateur.</p>
             </div>
           )}
 
