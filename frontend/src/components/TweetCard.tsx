@@ -1,4 +1,4 @@
-import { Tweet, fetchReplies, createReply, Reply, getLikeStatus, getImageUrl, checkBlockStatus, fetchUsersByQuery, retweetPost, getRetweetStatus } from '../lib/loaders';
+import { Tweet, fetchReplies, createReply, Reply, getLikeStatus, getImageUrl, checkBlockStatus, fetchUsersByQuery, retweetPost, getRetweetStatus, checkFollowStatus } from '../lib/loaders';
 import { useState, useEffect, useRef } from 'react';
 import { likePost, unlikePost } from '../lib/loaders';
 import { useAuth } from '../contexts/AuthContext';
@@ -164,6 +164,7 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isBlockedByAuthor, setIsBlockedByAuthor] = useState<boolean>(false);
   const [isOriginalUserPrivate, setIsOriginalUserPrivate] = useState<boolean>(false);
+  const [isFollowingOriginalUser, setIsFollowingOriginalUser] = useState<boolean>(false);
   const replyInputRef = useRef<HTMLTextAreaElement>(null);
   const replyFormRef = useRef<HTMLDivElement>(null);
   const [displayedRepliesCount, setDisplayedRepliesCount] = useState<number>(3);
@@ -198,25 +199,51 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
     setCurrentTweet(tweet);
     setFormattedContent(formatContent(tweet.content));
 
+    // Fonction pour vérifier les différentes façons dont is_private pourrait être stocké
+    const checkIsPrivate = (obj: any): boolean => {
+      if (!obj) return false;
+
+      // Vérification spéciale pour l'utilisateur avec ID 6 (Logobi/atomic) qui a un compte privé
+      console.log("obj.isPrivate:", obj.isPrivate);
+      if (obj.isPrivate === true) {
+        return true;
+      }
+
+      return (
+        obj.isPrivate === true ||
+        obj.is_private === true ||
+        (obj.isPrivate !== undefined && Boolean(obj.isPrivate)) ||
+        (obj.is_private !== undefined && Boolean(obj.is_private))
+      );
+    };
+
     // Vérifier si l'utilisateur original a un compte privé
-    const originalUser = tweet.isRetweet && tweet.originalUser
-      ? tweet.originalUser
-      : tweet.user;
+    let isPrivate = false;
 
-    // Vérifier si l'utilisateur original a un compte privé en utilisant une approche sûre avec TypeScript
-    if (originalUser) {
-      // Utiliser une conversion explicite pour accéder à is_private
-      const userObj = originalUser as any;
-      const userIsPrivate =
-        userObj.isPrivate === true ||
-        userObj.is_private === true;
+    // Vérifier dans tous les objets possibles
+    if (tweet.isRetweet) {
+      // 1. Vérifier dans originalUser
+      if (tweet.originalUser) {
+        isPrivate = isPrivate || checkIsPrivate(tweet.originalUser);
+      }
 
-      setIsOriginalUserPrivate(userIsPrivate);
-
-      // Log pour debug
-      console.log("isOriginalUserPrivate défini à:", userIsPrivate, "à partir de:", userObj);
+      // 2. Vérifier dans originalPost.user
+      if (tweet.originalPost && tweet.originalPost.user) {
+        isPrivate = isPrivate || checkIsPrivate(tweet.originalPost.user);
+      }
     } else {
-      setIsOriginalUserPrivate(false);
+      // Si ce n'est pas un retweet, vérifier l'utilisateur actuel
+      isPrivate = checkIsPrivate(tweet.user);
+    }
+
+    setIsOriginalUserPrivate(isPrivate);
+
+    // Log pour debug
+    console.log("Tweet:", tweet);
+    console.log("isOriginalUserPrivate défini à:", isPrivate);
+    if (tweet.isRetweet) {
+      console.log("originalUser:", tweet.originalUser);
+      console.log("originalPost.user:", tweet.originalPost?.user);
     }
   }, [tweet]);
 
@@ -249,6 +276,38 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
 
     checkIfBlockedByAuthor();
   }, [currentTweet.user?.id, user?.id]);
+
+  // Vérifier si l'utilisateur actuel suit l'utilisateur original privé
+  useEffect(() => {
+    const checkFollowStatusOfOriginalUser = async () => {
+      // Seulement vérifier si l'utilisateur est connecté et le tweet est un retweet avec un utilisateur original privé
+      if (!user || !isOriginalUserPrivate) return;
+
+      // Déterminer l'ID de l'utilisateur original
+      let originalUserId: number | undefined;
+
+      if (tweet.isRetweet) {
+        if (tweet.originalUser) {
+          originalUserId = tweet.originalUser.id;
+        } else if (tweet.originalPost?.user) {
+          originalUserId = tweet.originalPost.user.id;
+        }
+      }
+
+      // Si nous avons trouvé un ID d'utilisateur original et que ce n'est pas l'utilisateur actuel
+      if (originalUserId && originalUserId !== user.id) {
+        try {
+          const followStatus = await checkFollowStatus(originalUserId);
+          setIsFollowingOriginalUser(followStatus.isFollowing);
+          console.log(`L'utilisateur suit-il l'utilisateur original (${originalUserId}) ? ${followStatus.isFollowing}`);
+        } catch (error) {
+          console.error('Erreur lors de la vérification du statut d\'abonnement:', error);
+        }
+      }
+    };
+
+    checkFollowStatusOfOriginalUser();
+  }, [tweet, isOriginalUserPrivate, user]);
 
   useEffect(() => {
     // Au chargement initial, vérifier s'il y a des réponses
@@ -875,84 +934,117 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
                       : tweet.user?.mention}
                   </span>
                 </div>
-                <p className="text-gray-800 mt-1">
-                  {tweet.isRetweet && tweet.originalPost
-                    ? tweet.originalPost.content
-                    : tweet.content}
-                </p>
 
-                {/* Affichage des médias du tweet */}
-                {(tweet.isRetweet && tweet.originalPost && tweet.originalPost.mediaUrl
-                  ? tweet.originalPost.mediaUrl
-                  : tweet.mediaUrl) && (
-                    <div
-                      className="mt-3 grid gap-2 rounded-lg overflow-hidden"
-                      style={getMediaGridLayout(
-                        (tweet.isRetweet && tweet.originalPost && tweet.originalPost.mediaUrl
-                          ? tweet.originalPost.mediaUrl
-                          : tweet.mediaUrl || "")
-                          .split(',')
-                          .filter(Boolean)
-                          .slice(0, 4)
-                          .length
-                      )}
-                    >
-                      {(tweet.isRetweet && tweet.originalPost && tweet.originalPost.mediaUrl
-                        ? tweet.originalPost.mediaUrl
-                        : tweet.mediaUrl || "")
-                        .split(',')
-                        .filter(Boolean)
-                        .slice(0, 4)
-                        .map((mediaFile, index) => {
-                          const isVideo = mediaFile.match(/\.(mp4|webm|ogg)$/i);
-                          const mediaFiles = (tweet.isRetweet && tweet.originalPost && tweet.originalPost.mediaUrl
-                            ? tweet.originalPost.mediaUrl
-                            : tweet.mediaUrl)
-                            ? (tweet.isRetweet && tweet.originalPost && tweet.originalPost.mediaUrl
-                              ? tweet.originalPost.mediaUrl
-                              : tweet.mediaUrl || "").split(',').filter(Boolean)
-                            : [];
-                          const mediaStyle = getMediaItemStyle(Math.min(mediaFiles.length, 4), index);
-
-                          return (
-                            <div
-                              key={index}
-                              style={mediaStyle}
-                              className="relative rounded-lg overflow-hidden cursor-pointer group border-2 border-orange/40 hover:border-orange transition-all duration-200"
-                            >
-                              {isVideo ? (
-                                <>
-                                  <video
-                                    src={getImageUrl(mediaFile)}
-                                    className="w-full h-full object-cover"
-                                  />
-                                  <div className="absolute inset-0 flex items-center justify-center">
-                                    <div className="bg-black/50 rounded-full p-2">
-                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white" className="w-6 h-6">
-                                        <path fillRule="evenodd" d="M4.5 5.653c0-1.426 1.529-2.33 2.779-1.643l11.54 6.348c1.295.712 1.295 2.573 0 3.285L7.28 19.991c-1.25.687-2.779-.217-2.779-1.643V5.653z" clipRule="evenodd" />
-                                      </svg>
-                                    </div>
-                                  </div>
-                                </>
-                              ) : (
-                                <img
-                                  src={getImageUrl(mediaFile)}
-                                  alt={`Média ${index + 1}`}
-                                  className="w-full h-full object-cover"
-                                />
-                              )}
-
-                              {/* Indicateur s'il y a plus de médias */}
-                              {mediaFiles.length > 4 && index === 3 && (
-                                <div className="absolute inset-0 bg-black/50 flex items-center justify-center text-white text-xl font-bold">
-                                  +{mediaFiles.length - 4}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
+                {isOriginalUserPrivate && !isFollowingOriginalUser ? (
+                  // Afficher un message de contenu masqué si l'utilisateur est privé
+                  <div className="mt-3 p-4 bg-light-orange border border-orange rounded-lg text-dark-orange text-center italic">
+                    <div className="flex items-center justify-center mb-2">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-orange mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7A9.97 9.97 0 014.02 8.971m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                      </svg>
+                      <span className="font-medium">Contenu masqué</span>
                     </div>
-                  )}
+                    {isFollowingOriginalUser ? (
+                      <p>Vous suivez cet utilisateur privé. <button
+                        onClick={() => {
+                          setIsRetweetModalOpen(false);
+                          if (tweet.originalUser) {
+                            onUserProfileClick?.(tweet.originalUser.id);
+                          } else if (tweet.originalPost?.user) {
+                            onUserProfileClick?.(tweet.originalPost.user.id);
+                          }
+                        }}
+                        className="text-orange font-semibold hover:underline">
+                        Voir son profil
+                      </button>
+                      </p>
+                    ) : (
+                      <p>Ce contenu n'est visible que par les abonnés de l'utilisateur</p>
+                    )}
+                  </div>
+                ) : (
+                  // Afficher le contenu normal si l'utilisateur n'est pas privé
+                  <>
+                    <p className="text-gray-800 mt-1">
+                      {tweet.isRetweet && tweet.originalPost
+                        ? tweet.originalPost.content
+                        : tweet.content}
+                    </p>
+
+                    {/* Affichage des médias du tweet */}
+                    {(tweet.isRetweet && tweet.originalPost && tweet.originalPost.mediaUrl
+                      ? tweet.originalPost.mediaUrl
+                      : tweet.mediaUrl) && (
+                        <div
+                          className="mt-3 grid gap-2 rounded-lg overflow-hidden"
+                          style={getMediaGridLayout(
+                            (tweet.isRetweet && tweet.originalPost && tweet.originalPost.mediaUrl
+                              ? tweet.originalPost.mediaUrl
+                              : tweet.mediaUrl || "")
+                              .split(',')
+                              .filter(Boolean)
+                              .slice(0, 4)
+                              .length
+                          )}
+                        >
+                          {(tweet.isRetweet && tweet.originalPost && tweet.originalPost.mediaUrl
+                            ? tweet.originalPost.mediaUrl
+                            : tweet.mediaUrl || "")
+                            .split(',')
+                            .filter(Boolean)
+                            .slice(0, 4)
+                            .map((mediaFile, index) => {
+                              const isVideo = mediaFile.match(/\.(mp4|webm|ogg)$/i);
+                              const mediaFiles = (tweet.isRetweet && tweet.originalPost && tweet.originalPost.mediaUrl
+                                ? tweet.originalPost.mediaUrl
+                                : tweet.mediaUrl)
+                                ? (tweet.isRetweet && tweet.originalPost && tweet.originalPost.mediaUrl
+                                  ? tweet.originalPost.mediaUrl
+                                  : tweet.mediaUrl || "").split(',').filter(Boolean)
+                                : [];
+                              const mediaStyle = getMediaItemStyle(Math.min(mediaFiles.length, 4), index);
+
+                              return (
+                                <div
+                                  key={index}
+                                  style={mediaStyle}
+                                  className="relative rounded-lg overflow-hidden cursor-pointer group border-2 border-orange/40 hover:border-orange transition-all duration-200"
+                                >
+                                  {isVideo ? (
+                                    <>
+                                      <video
+                                        src={getImageUrl(mediaFile)}
+                                        className="w-full h-full object-cover"
+                                      />
+                                      <div className="absolute inset-0 flex items-center justify-center">
+                                        <div className="bg-black/50 rounded-full p-2">
+                                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white" className="w-6 h-6">
+                                            <path fillRule="evenodd" d="M4.5 5.653c0-1.426 1.529-2.33 2.779-1.643l11.54 6.348c1.295.712 1.295 2.573 0 3.285L7.28 19.991c-1.25.687-2.779-.217-2.779-1.643V5.653z" clipRule="evenodd" />
+                                          </svg>
+                                        </div>
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <img
+                                      src={getImageUrl(mediaFile)}
+                                      alt={`Média ${index + 1}`}
+                                      className="w-full h-full object-cover"
+                                    />
+                                  )}
+
+                                  {/* Indicateur s'il y a plus de médias */}
+                                  {mediaFiles.length > 4 && index === 3 && (
+                                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center text-white text-xl font-bold">
+                                      +{mediaFiles.length - 4}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                        </div>
+                      )}
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -1085,67 +1177,51 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
                       {tweet.originalPost?.mediaUrl && (
                         <div className="mt-2 grid gap-2 rounded-lg overflow-hidden"
                           style={tweet.originalPost?.mediaUrl ? getMediaGridLayout(tweet.originalPost.mediaUrl.split(',').filter(Boolean).slice(0, 4).length) : {}}>
-                          {tweet.originalPost?.mediaUrl?.split(',').filter(Boolean).slice(0, 4).map((mediaFile, index) => {
-                            const isVideo = mediaFile.match(/\.(mp4|webm|ogg)$/i);
-                            const mediaFiles = tweet.originalPost?.mediaUrl?.split(',').filter(Boolean) || [];
-                            const mediaStyle = getMediaItemStyle(Math.min(mediaFiles.length, 4), index);
-
-                            return (
-                              <div
-                                key={index}
-                                style={mediaStyle}
-                                className="relative rounded-lg overflow-hidden cursor-pointer group border-1 border-gray-300 hover:border-black transition-all duration-200"
-                                onClick={() => openMediaOverlay(index)}
-                              >
-                                {isVideo ? (
-                                  <div className="relative aspect-video">
-                                    <video
-                                      src={getImageUrl(mediaFile)}
-                                      className="w-full h-full object-cover"
-                                    />
-                                    <div className="absolute inset-0 flex items-center justify-center">
-                                      <div className="bg-black/50 rounded-full p-2">
-                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white" className="w-6 h-6">
-                                          <path fillRule="evenodd" d="M4.5 5.653c0-1.426 1.529-2.33 2.779-1.643l11.54 6.348c1.295.712 1.295 2.573 0 3.285L7.28 19.991c-1.25.687-2.779-.217-2.779-1.643V5.653z" clipRule="evenodd" />
-                                        </svg>
-                                      </div>
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <img
-                                    src={getImageUrl(mediaFile)}
-                                    alt="Média"
-                                    className="w-full h-full object-cover"
-                                  />
-                                )}
-
-                                {/* Indicateur s'il y a plus de médias */}
-                                {mediaFiles.length > 4 && index === 3 && (
-                                  <div className="absolute inset-0 bg-black/50 flex items-center justify-center text-white text-xl font-bold">
-                                    +{mediaFiles.length - 4}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
+                          {/* Contenu média */}
+                        </div>
+                      )}
+                    </div>
+                  ) : isOriginalUserPrivate && !isFollowingOriginalUser ? (
+                    // Afficher un message de contenu masqué si l'utilisateur original est privé et que l'utilisateur actuel ne le suit pas
+                    <div className="p-3 bg-light-orange border border-orange rounded-lg text-dark-orange text-center italic">
+                      <div className="flex items-center justify-center mb-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-orange mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7A9.97 9.97 0 014.02 8.971m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                        </svg>
+                        <span className="font-medium">Contenu masqué</span>
+                      </div>
+                      <p className="text-sm">Ce contenu provient d'un compte privé et n'est visible que par ses abonnés</p>
+                      {tweet.originalPost?.user && (
+                        <div className="flex items-center justify-center mt-2">
+                          <img
+                            src={tweet.originalPost.user.avatar ? getImageUrl(tweet.originalPost.user.avatar) : '/default_pp.webp'}
+                            alt={tweet.originalPost.user.name || 'Avatar'}
+                            className="w-6 h-6 rounded-full mr-2 cursor-pointer"
+                            onClick={() => tweet.originalPost?.user?.id && onUserProfileClick?.(tweet.originalPost.user.id)}
+                          />
+                          <span className="font-medium">@{tweet.originalPost.user.mention}</span>
                         </div>
                       )}
                     </div>
                   ) : (
                     <div>
                       <div className="flex items-center space-x-2 mb-2">
-                        <img
-                          src={tweet.originalPost?.user?.avatar ? getImageUrl(tweet.originalPost.user.avatar) : '/default_pp.webp'}
-                          alt={tweet.originalPost?.user?.name || 'Avatar'}
-                          className="w-6 h-6 rounded-full"
-                          onClick={() => tweet.originalPost?.user?.id && onUserProfileClick?.(tweet.originalPost.user.id)}
-                        />
-                        <div>
-                          <span className="font-medium text-gray-900 dark:text-white">
-                            {tweet.originalPost?.user?.name}
-                          </span>
-                          <span className="text-gray-500 ml-1">@{tweet.originalPost?.user?.mention}</span>
-                        </div>
+                        {tweet.originalPost?.user && (
+                          <>
+                            <img
+                              src={tweet.originalPost.user.avatar ? getImageUrl(tweet.originalPost.user.avatar) : '/default_pp.webp'}
+                              alt={tweet.originalPost.user.name || 'Avatar'}
+                              className="w-6 h-6 rounded-full cursor-pointer"
+                              onClick={() => tweet.originalPost?.user?.id && onUserProfileClick?.(tweet.originalPost.user.id)}
+                            />
+                            <div>
+                              <span className="font-medium text-gray-900 dark:text-white">
+                                {tweet.originalPost.user.name}
+                              </span>
+                              <span className="text-gray-500 ml-1">@{tweet.originalPost.user.mention}</span>
+                            </div>
+                          </>
+                        )}
                       </div>
                       <div className="text-gray-800 dark:text-gray-200">
                         {formatContentWithLinks(tweet.originalPost.content, handleHashtagClick, handleMentionClick)}

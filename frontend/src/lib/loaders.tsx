@@ -55,7 +55,6 @@ export interface Tweet {
     isPinned?: boolean;
     retweets?: number; // Nombre de retweets
     isRetweet?: boolean; // Si c'est un retweet
-    user?: User; // Informations sur l'utilisateur qui a créé le post
     originalPost?: { // Le post original retourné par l'API
         id: number | null;
         content: string;
@@ -67,6 +66,7 @@ export interface Tweet {
             name: string;
             mention: string;
             avatar: string | null;
+            isPrivate?: boolean;
         } | null;
     };
     originalUser?: {
@@ -74,6 +74,7 @@ export interface Tweet {
         name: string;
         mention: string;
         avatar: string | null;
+        isPrivate?: boolean;
     }; // L'utilisateur qui a créé le post original (auteur du tweet original)
     user: {
         id: number;

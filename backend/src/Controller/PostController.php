@@ -396,7 +396,8 @@ class PostController extends AbstractController
                         'id' => $originalPost->getIdUser()->getId(),
                         'name' => $originalPost->getIdUser()->getName(),
                         'mention' => $originalPost->getIdUser()->getMention(),
-                        'avatar' => $originalPost->getIdUser()->getAvatar()
+                        'avatar' => $originalPost->getIdUser()->getAvatar(),
+                        'isPrivate' => $originalPost->getIdUser()->isPrivate()
                     ] : null
                 ];
             }
@@ -411,7 +412,8 @@ class PostController extends AbstractController
                         'id' => $originalUser->getId(),
                         'name' => $originalUser->getName(),
                         'mention' => $originalUser->getMention(),
-                        'avatar' => $originalUser->getAvatar()
+                        'avatar' => $originalUser->getAvatar(),
+                        'isPrivate' => $originalUser->isPrivate()
                     ] : null,
                     'deleted' => true // Indiquer que le post original a été supprimé
                 ];
@@ -422,7 +424,8 @@ class PostController extends AbstractController
                     'id' => $originalUser->getId(),
                     'name' => $originalUser->getName(),
                     'mention' => $originalUser->getMention(),
-                    'avatar' => $originalUser->getAvatar()
+                    'avatar' => $originalUser->getAvatar(),
+                    'isPrivate' => $originalUser->isPrivate()
                 ];
             }
         }
@@ -831,7 +834,8 @@ class PostController extends AbstractController
                         'id' => $originalPost->getIdUser()->getId(),
                         'name' => $originalPost->getIdUser()->getName(),
                         'mention' => $originalPost->getIdUser()->getMention(),
-                        'avatar' => $originalPost->getIdUser()->getAvatar()
+                        'avatar' => $originalPost->getIdUser()->getAvatar(),
+                        'isPrivate' => $originalPost->getIdUser()->isPrivate()
                     ] : null
                 ];
             }
@@ -846,7 +850,8 @@ class PostController extends AbstractController
                         'id' => $originalUser->getId(),
                         'name' => $originalUser->getName(),
                         'mention' => $originalUser->getMention(),
-                        'avatar' => $originalUser->getAvatar()
+                        'avatar' => $originalUser->getAvatar(),
+                        'isPrivate' => $originalUser->isPrivate()
                     ] : null,
                     'deleted' => true // Indiquer que le post original a été supprimé
                 ];
@@ -857,7 +862,8 @@ class PostController extends AbstractController
                     'id' => $originalUser->getId(),
                     'name' => $originalUser->getName(),
                     'mention' => $originalUser->getMention(),
-                    'avatar' => $originalUser->getAvatar()
+                    'avatar' => $originalUser->getAvatar(),
+                    'isPrivate' => $originalUser->isPrivate()
                 ];
             }
         }
@@ -872,7 +878,8 @@ class PostController extends AbstractController
                 'mention' => $user->getMention(),
                 'avatar' => $user->getAvatar(),
                 'isbanned' => $user->isbanned(),
-                'readOnly' => $user->isReadOnly()
+                'readOnly' => $user->isReadOnly(),
+                'isPrivate' => $user->isPrivate()
             ];
         } else {
             $postData['user'] = null;
