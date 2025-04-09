@@ -103,7 +103,7 @@ class PostController extends AbstractController
     ): JsonResponse {
         // Pagination
         $page = $request->query->getInt('page', 1);
-        $limit = 5;
+        $limit = 4;
         $offset = ($page - 1) * $limit;
 
         // Créer une requête personnalisée pour exclure les posts des utilisateurs en mode privé

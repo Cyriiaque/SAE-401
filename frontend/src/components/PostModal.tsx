@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
 import { Tweet, uploadImage, getImageUrl, updatePost, createPost, deleteMediaFile, fetchUsersByQuery, User } from '../lib/loaders.tsx';
-import Button from '../ui/buttons';
 
 interface PostModalProps {
     isOpen: boolean;
