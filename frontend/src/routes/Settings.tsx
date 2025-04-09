@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Sidebar from '../components/Sidebar';
 import Button from '../ui/buttons';
 import { useAuth } from '../contexts/AuthContext';
@@ -31,6 +31,21 @@ export default function Settings() {
     // État pour les overlays d'aide
     const [showHelpOverlay, setShowHelpOverlay] = useState<boolean>(false);
     const [showPrivateHelpOverlay, setShowPrivateHelpOverlay] = useState<boolean>(false);
+
+    // Mettre à jour les états lorsque l'utilisateur change
+    useEffect(() => {
+        if (user) {
+            // Mise à jour de l'intervalle d'actualisation
+            setRefreshInterval(user.postReload && user.postReload > 0 ? user.postReload : 1);
+            setIsFeatureEnabled(user.postReload && user.postReload > 0 ? true : false);
+
+            // Mise à jour du mode lecture seule
+            setIsReadOnlyMode(user.readOnly ? true : false);
+
+            // Mise à jour du mode privé
+            setIsPrivateMode(user.isPrivate ? true : false);
+        }
+    }, [user]);
 
     // Fonction pour mettre à jour les paramètres
     const handleToggleChange = async (enabled: boolean) => {
