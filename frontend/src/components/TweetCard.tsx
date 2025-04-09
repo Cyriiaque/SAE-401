@@ -177,13 +177,9 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
   const [isLocked, setIsLocked] = useState<boolean>(tweet.isLocked || false);
   const [togglingLock, setTogglingLock] = useState<boolean>(false);
 
-  // Nouvelle logique pour gérer les utilisateurs bannis
+  // Nouvelle logique pour gérer les utilisateurs bannis et les posts censurés
   const isBanned = tweet.user?.isbanned ?? false;
-
-  // Nouvelle logique pour gérer les posts censurés
   const isCensored = currentTweet.isCensored ?? false;
-
-  // Vérifier si le tweet provient d'un compte en mode lecture seule
   const isReadOnly = currentTweet.user?.readOnly ?? false;
 
   const mediaFiles = currentTweet.mediaUrl ? currentTweet.mediaUrl.split(',') : [];
@@ -191,6 +187,7 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
   const hasMoreMedia = mediaFiles.length > 4;
   const additionalMediaCount = mediaFiles.length - 4;
 
+  // Tous les hooks doivent être déclarés avant les conditions de retour
   useEffect(() => {
     const handleResize = () => {
       setFormattedContent(formatContent(currentTweet.content));
@@ -266,7 +263,6 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
     checkLikeStatus();
   }, [currentTweet.id]);
 
-  // Vérifier si l'utilisateur actuel est bloqué par l'auteur du post
   useEffect(() => {
     const checkIfBlockedByAuthor = async () => {
       if (user && currentTweet.user && user.id !== currentTweet.user.id) {
@@ -282,13 +278,10 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
     checkIfBlockedByAuthor();
   }, [currentTweet.user?.id, user?.id]);
 
-  // Vérifier si l'utilisateur actuel suit l'utilisateur original privé
   useEffect(() => {
     const checkFollowStatusOfOriginalUser = async () => {
-      // Seulement vérifier si l'utilisateur est connecté et le tweet est un retweet avec un utilisateur original privé
       if (!user || !isOriginalUserPrivate) return;
 
-      // Déterminer l'ID de l'utilisateur original
       let originalUserId: number | undefined;
 
       if (tweet.isRetweet) {
@@ -299,12 +292,10 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
         }
       }
 
-      // Si nous avons trouvé un ID d'utilisateur original et que ce n'est pas l'utilisateur actuel
       if (originalUserId && originalUserId !== user.id) {
         try {
           const followStatus = await checkFollowStatus(originalUserId);
           setIsFollowingOriginalUser(followStatus.isFollowing);
-          console.log(`L'utilisateur suit-il l'utilisateur original (${originalUserId}) ? ${followStatus.isFollowing}`);
         } catch (error) {
           console.error('Erreur lors de la vérification du statut d\'abonnement:', error);
         }
@@ -315,14 +306,11 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
   }, [tweet, isOriginalUserPrivate, user]);
 
   useEffect(() => {
-    // Au chargement initial, vérifier s'il y a des réponses
     const checkRepliesExist = async () => {
       try {
         const response = await fetchReplies(currentTweet.id);
-        // Mettre à jour seulement le compteur, sans afficher les réponses
         setReplyCount(response.replies.length);
 
-        // Vérifier si l'utilisateur actuel a déjà répondu
         if (user && response.replies.length > 0) {
           const hasUserReplied = response.replies.some(reply => reply.user?.id === user.id);
           setUserHasReplied(hasUserReplied);
@@ -335,13 +323,11 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
     checkRepliesExist();
   }, [currentTweet.id, user]);
 
-  // Vérifier le statut de retweet
   useEffect(() => {
     const checkRetweetStatus = async () => {
       if (!user) return;
 
       try {
-        // Si le tweet est déjà un retweet, vérifier le statut du post original
         const postIdToCheck = tweet.isRetweet && tweet.originalPost && tweet.originalPost.id !== null
           ? tweet.originalPost.id
           : currentTweet.id;
@@ -356,8 +342,24 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
     checkRetweetStatus();
   }, [currentTweet.id, tweet.isRetweet, tweet.originalPost, user]);
 
+  // Vérifier si l'utilisateur est un abonné de l'auteur
+  useEffect(() => {
+    if (user && tweet.user && tweet.user.id !== user.id && !isBlockedByAuthor) {
+      setCheckingFollowStatus(true);
+      checkFollowStatus(tweet.user.id)
+        .then(res => {
+          setIsFollowing(res.isFollowing);
+        })
+        .catch(err => {
+          console.error("Erreur lors de la vérification du statut d'abonnement:", err);
+        })
+        .finally(() => {
+          setCheckingFollowStatus(false);
+        });
+    }
+  }, [user, tweet.user, isBlockedByAuthor]);
+
   const handleLike = async () => {
-    // Si l'utilisateur est bloqué par l'auteur, empêcher l'interaction
     if (isBlockedByAuthor) {
       setErrorMessage("Vous ne pouvez pas interagir avec ce post car l'auteur vous a bloqué.");
       setTimeout(() => setErrorMessage(null), 3000);
@@ -384,18 +386,14 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
     setIsEditModalOpen(false);
   };
 
-  // Nouvelle fonction pour afficher/masquer les réponses sans ouvrir le formulaire
   const handleToggleReplies = async () => {
-    // Inverser l'état d'affichage des réponses
     const willShow = !showReplies;
     setShowReplies(willShow);
 
-    // Réinitialiser le compteur de réponses affichées quand on masque les réponses
     if (!willShow) {
       setDisplayedRepliesCount(3);
     }
 
-    // Si on va afficher les réponses et qu'elles n'ont pas encore été chargées
     if (willShow && replies.length === 0) {
       setLoadingReplies(true);
 
@@ -403,7 +401,6 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
         const response = await fetchReplies(currentTweet.id);
         setReplies(response.replies);
 
-        // Vérifier si l'utilisateur actuel a déjà répondu
         if (user) {
           const hasUserReplied = response.replies.some(reply => reply.user?.id === user.id);
           setUserHasReplied(hasUserReplied);
@@ -423,14 +420,12 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
 
     if (!replyContent.trim() || isSubmittingReply || userHasReplied) return;
 
-    // Si l'utilisateur est bloqué par l'auteur, empêcher l'interaction
     if (isBlockedByAuthor) {
       setErrorMessage("Vous ne pouvez pas répondre à ce post car l'auteur vous a bloqué.");
       setTimeout(() => setErrorMessage(null), 3000);
       return;
     }
 
-    // Si le compte est en mode lecture seule, empêcher la réponse
     if (isReadOnly) {
       setErrorMessage("Ce compte est en mode lecture seule. Les réponses sont désactivées.");
       setTimeout(() => setErrorMessage(null), 3000);
@@ -441,33 +436,21 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
 
     try {
       const newReply = await createReply(currentTweet.id, replyContent);
-
-      // Ajouter la nouvelle réponse au début de la liste
       setReplies(prev => [newReply, ...prev]);
-
-      // Incrémenter le compteur de réponses
       setReplyCount(prev => prev + 1);
-
-      // Marquer que l'utilisateur a répondu
       setUserHasReplied(true);
-
-      // Réinitialiser le formulaire
       setReplyContent('');
-
-      // Toujours afficher les réponses après l'envoi, même si c'était la première
       setShowReplies(true);
 
       console.log('Réponse ajoutée avec succès', newReply);
     } catch (error: any) {
       console.error('Erreur lors de l\'envoi de la réponse:', error);
 
-      // Si le message d'erreur indique que l'utilisateur a déjà répondu
       if (error.message && error.message.includes('déjà répondu')) {
         setUserHasReplied(true);
         setErrorMessage("Vous avez déjà répondu à ce post");
         setTimeout(() => setErrorMessage(null), 3000);
 
-        // Rafraîchir les réponses pour s'assurer que nous avons les données correctes
         try {
           const response = await fetchReplies(currentTweet.id);
           setReplies(response.replies);
@@ -476,7 +459,6 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
           console.error('Erreur lors du rafraîchissement des réponses:', fetchError);
         }
       } else {
-        // Autre type d'erreur
         setErrorMessage(error.message || "Erreur lors de l'envoi de la réponse");
         setTimeout(() => setErrorMessage(null), 3000);
       }
@@ -546,6 +528,172 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
     setIsMediaOverlayOpen(true);
   };
 
+  const handleShowMoreReplies = () => {
+    setDisplayedRepliesCount(prev => prev + 5);
+  };
+
+  const handleRetweetClick = () => {
+    if (!user || !isAuthenticated) {
+      setIsLoginModalOpen(true);
+      return;
+    }
+
+    if (isRetweeted) {
+      setErrorMessage("Vous avez déjà retweeté ce post");
+      setTimeout(() => setErrorMessage(null), 3000);
+      return;
+    }
+
+    if (user.id === currentTweet.user?.id) {
+      setErrorMessage("Vous ne pouvez pas repartager votre propre post");
+      setTimeout(() => setErrorMessage(null), 3000);
+      return;
+    }
+
+    setIsRetweetModalOpen(true);
+  };
+
+  const handleDirectRetweet = async () => {
+    if (!user || !isAuthenticated) {
+      setIsLoginModalOpen(true);
+      return;
+    }
+
+    try {
+      const postIdToRetweet = tweet.isRetweet && tweet.originalPost && tweet.originalPost.id !== null
+        ? tweet.originalPost.id
+        : currentTweet.id;
+
+      const newRetweet = await retweetPost(postIdToRetweet, '');
+      setIsRetweeted(true);
+      setRetweets(prevRetweets => prevRetweets + 1);
+      setIsRetweetModalOpen(false);
+
+      const retweetEvent = new CustomEvent('retweetCreated', {
+        detail: newRetweet
+      });
+      window.dispatchEvent(retweetEvent);
+    } catch (error: any) {
+      if (error.message?.includes('blocked')) {
+        setErrorMessage('Vous ne pouvez pas retweeter le post d\'un utilisateur qui vous a bloqué.');
+      } else {
+        setErrorMessage('Une erreur est survenue lors du retweet.');
+      }
+    }
+  };
+
+  const handleRetweetWithComment = async () => {
+    if (!user || !isAuthenticated) {
+      setIsLoginModalOpen(true);
+      return;
+    }
+
+    try {
+      const postIdToRetweet = tweet.isRetweet && tweet.originalPost && tweet.originalPost.id !== null
+        ? tweet.originalPost.id
+        : currentTweet.id;
+
+      const newRetweet = await retweetPost(postIdToRetweet, retweetComment);
+      setIsRetweeted(true);
+      setRetweets(prevRetweets => prevRetweets + 1);
+      setIsRetweetModalOpen(false);
+      setRetweetComment('');
+
+      const retweetEvent = new CustomEvent('retweetCreated', {
+        detail: newRetweet
+      });
+      window.dispatchEvent(retweetEvent);
+    } catch (error: any) {
+      if (error.message?.includes('blocked')) {
+        setErrorMessage('Vous ne pouvez pas retweeter le post d\'un utilisateur qui vous a bloqué.');
+      } else {
+        setErrorMessage('Une erreur est survenue lors du retweet avec commentaire.');
+      }
+    }
+  };
+
+  const handleHashtagClick = (hashtag: string) => {
+    navigate(`/?q=${encodeURIComponent(hashtag)}`);
+  };
+
+  const handleMentionClick = async (mention: string) => {
+    if (tweet.user && tweet.user.mention === mention) {
+      if (onUserProfileClick && tweet.user) {
+        onUserProfileClick(tweet.user.id);
+      }
+      return;
+    }
+
+    if (onUserProfileClick) {
+      try {
+        const users = await fetchUsersByQuery(mention);
+        const matchedUser = users.find(user => user.mention === mention);
+
+        if (matchedUser) {
+          onUserProfileClick(matchedUser.id);
+        } else if (users.length > 0) {
+          onUserProfileClick(users[0].id);
+        } else {
+          console.error(`Aucun utilisateur trouvé avec la mention @${mention}`);
+        }
+      } catch (error) {
+        console.error('Erreur lors de la recherche de l\'utilisateur par mention:', error);
+      }
+    }
+  };
+
+  const handleToggleLock = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+
+    if (!user || togglingLock) return;
+
+    setTogglingLock(true);
+    try {
+      const response = await toggleLockPost(currentTweet.id);
+      setIsLocked(response.isLocked);
+
+      setCurrentTweet(prev => ({
+        ...prev,
+        isLocked: response.isLocked
+      }));
+
+      if (onPostUpdated) {
+        onPostUpdated({
+          ...currentTweet,
+          isLocked: response.isLocked
+        });
+      }
+
+      if (response.isLocked) {
+        setReplies([]);
+        setShowReplies(false);
+      }
+    } catch (error) {
+      console.error("Erreur lors du verrouillage/déverrouillage des commentaires:", error);
+    } finally {
+      setTogglingLock(false);
+    }
+  };
+
+  // RetweetHeader component
+  const RetweetHeader = () => {
+    if (!tweet.isRetweet || !tweet.originalUser) return null;
+
+    return (
+      <div className="flex items-center mb-2 text-orange text-sm">
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+        </svg>
+        <span>
+          Repartagé d'un tweet de <span className="font-medium hover:underline cursor-pointer" onClick={() => tweet.originalUser && onUserProfileClick?.(tweet.originalUser.id)}>
+            @{tweet.originalUser.mention}
+          </span>
+        </span>
+      </div>
+    );
+  };
+
+  // MediaOverlay component
   const MediaOverlay = () => {
     if (!isMediaOverlayOpen) return null;
 
@@ -663,112 +811,185 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
     );
   };
 
-  // Fonction pour afficher plus de réponses
-  const handleShowMoreReplies = () => {
-    setDisplayedRepliesCount(prev => prev + 5);
+  // RetweetModal component
+  const RetweetModal = () => {
+    if (!isRetweetModalOpen) return null;
+
+    return (
+      <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+        <div className="p-4">
+          {isOriginalUserPrivate && (
+            <div className="mb-4 p-3 bg-light-orange border border-orange rounded-lg text-dark-orange text-sm">
+              <div className="flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-[#F05E1D]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+                <span>Le compte à l'origine de ce post est privé, la visualisation sera restreinte sur votre republication</span>
+              </div>
+            </div>
+          )}
+          <div className="mb-4 flex space-x-3 border-b pb-4 text-sm">
+            <img
+              src={
+                // Si c'est un retweet, on utilise l'avatar de l'utilisateur du post original
+                tweet.isRetweet && tweet.originalPost && tweet.originalPost.user?.avatar
+                  ? getImageUrl(tweet.originalPost.user.avatar)
+                  : tweet.user?.avatar
+                    ? getImageUrl(tweet.user.avatar)
+                    : '/default_pp.webp'
+              }
+              alt={`${tweet.isRetweet && tweet.originalPost && tweet.originalPost.user?.name
+                ? tweet.originalPost.user.name
+                : tweet.user?.name
+                } avatar`}
+              className="h-10 w-10 rounded-full"
+            />
+            <div className="flex-1">
+              <div className="font-bold">
+                {tweet.isRetweet && tweet.originalPost && tweet.originalPost.user?.name
+                  ? tweet.originalPost.user.name
+                  : tweet.user?.name}
+              </div>
+              <p className="mt-1">
+                {tweet.isRetweet && tweet.originalPost
+                  ? tweet.originalPost.content
+                  : tweet.content}
+              </p>
+
+              {/* Affichage des médias du tweet */}
+              {(tweet.isRetweet && tweet.originalPost && tweet.originalPost.mediaUrl
+                ? tweet.originalPost.mediaUrl
+                : tweet.mediaUrl) && (
+                  <div
+                    className="mt-3 grid gap-2 rounded-lg overflow-hidden"
+                    style={getMediaGridLayout(
+                      (tweet.isRetweet && tweet.originalPost && tweet.originalPost.mediaUrl
+                        ? tweet.originalPost.mediaUrl
+                        : tweet.mediaUrl || "")
+                        .split(',')
+                        .filter(Boolean)
+                        .slice(0, 4)
+                        .length
+                    )}
+                  >
+                    {(tweet.isRetweet && tweet.originalPost && tweet.originalPost.mediaUrl
+                      ? tweet.originalPost.mediaUrl
+                      : tweet.mediaUrl || "")
+                      .split(',')
+                      .filter(Boolean)
+                      .slice(0, 4)
+                      .map((mediaFile, index) => {
+                        const isVideo = mediaFile.match(/\.(mp4|webm|ogg)$/i);
+                        const mediaFiles = (tweet.isRetweet && tweet.originalPost && tweet.originalPost.mediaUrl
+                          ? tweet.originalPost.mediaUrl
+                          : tweet.mediaUrl)
+                          ? (tweet.isRetweet && tweet.originalPost && tweet.originalPost.mediaUrl
+                            ? tweet.originalPost.mediaUrl
+                            : tweet.mediaUrl || "").split(',').filter(Boolean)
+                          : [];
+                        const mediaStyle = getMediaItemStyle(Math.min(mediaFiles.length, 4), index);
+
+                        return (
+                          <div
+                            key={index}
+                            style={mediaStyle}
+                            className="relative rounded-lg overflow-hidden border-2 border-orange/40 hover:border-orange transition-all duration-200"
+                          >
+                            {isVideo ? (
+                              <>
+                                <video
+                                  src={getImageUrl(mediaFile)}
+                                  className="w-full h-full object-cover"
+                                />
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                  <div className="bg-black/50 rounded-full p-2">
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white" className="w-6 h-6">
+                                      <path fillRule="evenodd" d="M4.5 5.653c0-1.426 1.529-2.33 2.779-1.643l11.54 6.348c1.295.712 1.295 2.573 0 3.285L7.28 19.991c-1.25.687-2.779-.217-2.779-1.643V5.653z" clipRule="evenodd" />
+                                    </svg>
+                                  </div>
+                                </div>
+                              </>
+                            ) : (
+                              <img
+                                src={getImageUrl(mediaFile)}
+                                alt={`Média ${index + 1}`}
+                                className="w-full h-full object-cover"
+                              />
+                            )}
+
+                            {/* Indicateur s'il y a plus de médias */}
+                            {mediaFiles.length > 4 && index === 3 && (
+                              <div className="absolute inset-0 bg-black/50 flex items-center justify-center text-white text-xl font-bold">
+                                +{mediaFiles.length - 4}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                  </div>
+                )}
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <textarea
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange focus:border-orange"
+                rows={3}
+                placeholder="Ajouter un commentaire (optionnel)"
+                value={retweetComment}
+                onChange={(e) => setRetweetComment(e.target.value)}
+              ></textarea>
+
+              <div className="mt-3 flex items-center justify-between">
+                <div className="text-sm text-gray-500">
+                  {retweetComment ? "Retweet avec commentaire" : "Retweet sans commentaire"}
+                </div>
+                <div className={`text-sm ${retweetComment.length > 250 ? "text-red-500" : "text-gray-500"}`}>
+                  {retweetComment.length}/280
+                </div>
+              </div>
+
+              <Button
+                onClick={retweetComment.trim() ? handleRetweetWithComment : handleDirectRetweet}
+                variant="full"
+                className="mt-3 w-full py-2 flex items-center justify-center gap-2"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Retweeter
+              </Button>
+
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   };
 
-  const handleRetweetClick = () => {
-    if (!user || !isAuthenticated) {
-      setIsLoginModalOpen(true);
-      return;
-    }
-
-    // Si déjà retweeté, afficher un message et ne pas ouvrir la modal
-    if (isRetweeted) {
-      setErrorMessage("Vous avez déjà retweeté ce post");
-      setTimeout(() => setErrorMessage(null), 3000);
-      return;
-    }
-
-    // Si c'est son propre tweet, afficher un message d'erreur
-    if (user.id === currentTweet.user?.id) {
-      setErrorMessage("Vous ne pouvez pas repartager votre propre post");
-      setTimeout(() => setErrorMessage(null), 3000);
-      return;
-    }
-
-    // Déterminer l'utilisateur à l'origine du post
-    const originalUser = tweet.isRetweet && tweet.originalPost && tweet.originalPost.user
-      ? tweet.originalPost.user
-      : tweet.user;
-
-    // Afficher l'utilisateur à l'origine du post dans la console
-    console.log("Utilisateur à l'origine du post:", originalUser);
-
-    // Ouvrir la modale avec le bon contexte
-    // Si c'est un retweet, on doit afficher le post original
-    setIsRetweetModalOpen(true);
-  };
-
-  const handleDirectRetweet = async () => {
-    if (!user || !isAuthenticated) {
-      setIsLoginModalOpen(true);
-      return;
-    }
-
-    try {
-      // Si le tweet est déjà un retweet, on utilise l'ID du post original s'il existe
-      const postIdToRetweet = tweet.isRetweet && tweet.originalPost && tweet.originalPost.id !== null
-        ? tweet.originalPost.id
-        : currentTweet.id;
-
-      // La fonction retweetPost attend le paramètre 'content' et non 'comment'
-      const newRetweet = await retweetPost(postIdToRetweet, '');
-
-      // Mettre à jour l'UI
-      setIsRetweeted(true);
-      setRetweets(prevRetweets => prevRetweets + 1);
-      setIsRetweetModalOpen(false);
-
-      // Émettre un événement personnalisé pour notifier qu'un retweet a été créé
-      const retweetEvent = new CustomEvent('retweetCreated', {
-        detail: newRetweet
-      });
-      window.dispatchEvent(retweetEvent);
-    } catch (error: any) {
-      if (error.message?.includes('blocked')) {
-        setErrorMessage('Vous ne pouvez pas retweeter le post d\'un utilisateur qui vous a bloqué.');
-      } else {
-        setErrorMessage('Une erreur est survenue lors du retweet.');
-      }
-    }
-  };
-
-  const handleRetweetWithComment = async () => {
-    if (!user || !isAuthenticated) {
-      setIsLoginModalOpen(true);
-      return;
-    }
-
-    try {
-      // Si le tweet est déjà un retweet, on utilise l'ID du post original s'il existe
-      const postIdToRetweet = tweet.isRetweet && tweet.originalPost && tweet.originalPost.id !== null
-        ? tweet.originalPost.id
-        : currentTweet.id;
-
-      // La fonction retweetPost attend le paramètre 'content' et non 'comment'
-      const newRetweet = await retweetPost(postIdToRetweet, retweetComment);
-
-      // Mettre à jour l'UI
-      setIsRetweeted(true);
-      setRetweets(prevRetweets => prevRetweets + 1);
-      setIsRetweetModalOpen(false);
-      setRetweetComment('');
-
-      // Émettre un événement personnalisé pour notifier qu'un retweet a été créé
-      const retweetEvent = new CustomEvent('retweetCreated', {
-        detail: newRetweet
-      });
-      window.dispatchEvent(retweetEvent);
-    } catch (error: any) {
-      if (error.message?.includes('blocked')) {
-        setErrorMessage('Vous ne pouvez pas retweeter le post d\'un utilisateur qui vous a bloqué.');
-      } else {
-        setErrorMessage('Une erreur est survenue lors du retweet avec commentaire.');
-      }
-    }
-  };
+  // Après avoir défini tous les hooks et composants fonctionnels, on fait les retours conditionnels
+  // Maintenant les retours conditionnels sont après tous les hooks
+  if (isBanned) {
+    return (
+      <div className="p-4 hover:bg-gray-50 border-b border-gray-300">
+        <div className="flex space-x-3 min-h-[48px]">
+          <div className="relative flex-shrink-0">
+            <img
+              src="/default_pp.webp"
+              alt="Avatar par défaut"
+              className="h-12 w-12 rounded-full object-cover"
+            />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="mt-2 text-gray-900 whitespace-pre-line break-words">
+              Ce compte a été bloqué pour non respect des conditions d'utilisation.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Si le post est censuré, afficher un message alternatif
   if (isCensored) {
@@ -829,335 +1050,7 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
     );
   }
 
-  // Si l'utilisateur est banni, on limite l'affichage
-  if (isBanned) {
-    return (
-      <div className="p-4 hover:bg-gray-50 border-b border-gray-300">
-        <div className="flex space-x-3 min-h-[48px]">
-          <div className="relative flex-shrink-0">
-            <img
-              src="/default_pp.webp"
-              alt="Avatar par défaut"
-              className="h-12 w-12 rounded-full object-cover"
-            />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="mt-2 text-gray-900 whitespace-pre-line break-words">
-              Ce compte a été bloqué pour non respect des conditions d'utilisation.
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const handleHashtagClick = (hashtag: string) => {
-    // Rediriger vers la page d'accueil avec recherche pour ce hashtag
-    navigate(`/?q=${encodeURIComponent(hashtag)}`);
-  };
-
-  const handleMentionClick = async (mention: string) => {
-    // Si le tweet a un auteur et que la mention correspond à l'auteur du tweet
-    if (tweet.user && tweet.user.mention === mention) {
-      // Afficher le profil de l'utilisateur
-      if (onUserProfileClick && tweet.user) {
-        onUserProfileClick(tweet.user.id);
-      }
-      return;
-    }
-
-    // Sinon, chercher l'utilisateur par sa mention
-    if (onUserProfileClick) {
-      try {
-        // Rechercher l'utilisateur par sa mention
-        const users = await fetchUsersByQuery(mention);
-
-        // Trouver l'utilisateur dont la mention correspond exactement
-        const matchedUser = users.find(user => user.mention === mention);
-
-        if (matchedUser) {
-          // Afficher le profil de l'utilisateur trouvé
-          onUserProfileClick(matchedUser.id);
-        } else if (users.length > 0) {
-          // Si pas de correspondance exacte mais des résultats, prendre le premier
-          onUserProfileClick(users[0].id);
-        } else {
-          console.error(`Aucun utilisateur trouvé avec la mention @${mention}`);
-        }
-      } catch (error) {
-        console.error('Erreur lors de la recherche de l\'utilisateur par mention:', error);
-      }
-    }
-  };
-
-  // Ajouter ici la modal de retweet qui sera rendue en fin de composant
-  const RetweetModal = () => {
-    if (!isRetweetModalOpen) return null;
-
-    return (
-      <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-        <div className="bg-white rounded-xl shadow-xl p-6 max-w-md w-full mx-4">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-xl font-bold">Repartager ce post</h3>
-            <button
-              onClick={() => setIsRetweetModalOpen(false)}
-              className="text-gray-500 hover:text-gray-700"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-
-          <div className="border-t border-b border-gray-200 py-4 my-4">
-            <div className="flex items-start space-x-3">
-              <img
-                src={
-                  // Si c'est un retweet, on utilise l'avatar de l'utilisateur du post original
-                  tweet.isRetweet && tweet.originalPost && tweet.originalPost.user?.avatar
-                    ? getImageUrl(tweet.originalPost.user.avatar)
-                    : tweet.user?.avatar
-                      ? getImageUrl(tweet.user.avatar)
-                      : '/default_pp.webp'
-                }
-                alt={`${tweet.isRetweet && tweet.originalPost && tweet.originalPost.user?.name
-                  ? tweet.originalPost.user.name
-                  : tweet.user?.name
-                  } avatar`}
-                className="w-10 h-10 rounded-full"
-              />
-              <div className="flex-1">
-                <div className="flex items-center space-x-1">
-                  <span className="font-bold">
-                    {tweet.isRetweet && tweet.originalPost && tweet.originalPost.user?.name
-                      ? tweet.originalPost.user.name
-                      : tweet.user?.name}
-                  </span>
-                  <span className="text-gray-500">
-                    @{tweet.isRetweet && tweet.originalPost && tweet.originalPost.user?.mention
-                      ? tweet.originalPost.user.mention
-                      : tweet.user?.mention}
-                  </span>
-                </div>
-
-                {isOriginalUserPrivate && !isFollowingOriginalUser ? (
-                  // Afficher un message de contenu masqué si l'utilisateur est privé
-                  <div className="mt-3 p-4 bg-light-orange border border-orange rounded-lg text-dark-orange text-center italic">
-                    <div className="flex items-center justify-center mb-2">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-orange mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7A9.97 9.97 0 014.02 8.971m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
-                      </svg>
-                      <span className="font-medium">Contenu masqué</span>
-                    </div>
-                    {isFollowingOriginalUser ? (
-                      <p>Vous suivez cet utilisateur privé. <button
-                        onClick={() => {
-                          setIsRetweetModalOpen(false);
-                          if (tweet.originalUser) {
-                            onUserProfileClick?.(tweet.originalUser.id);
-                          } else if (tweet.originalPost?.user) {
-                            onUserProfileClick?.(tweet.originalPost.user.id);
-                          }
-                        }}
-                        className="text-orange font-semibold hover:underline">
-                        Voir son profil
-                      </button>
-                      </p>
-                    ) : (
-                      <p>Ce contenu n'est visible que par les abonnés de l'utilisateur</p>
-                    )}
-                  </div>
-                ) : (
-                  // Afficher le contenu normal si l'utilisateur n'est pas privé
-                  <>
-                    <p className="text-gray-800 mt-1">
-                      {tweet.isRetweet && tweet.originalPost
-                        ? tweet.originalPost.content
-                        : tweet.content}
-                    </p>
-
-                    {/* Affichage des médias du tweet */}
-                    {(tweet.isRetweet && tweet.originalPost && tweet.originalPost.mediaUrl
-                      ? tweet.originalPost.mediaUrl
-                      : tweet.mediaUrl) && (
-                        <div
-                          className="mt-3 grid gap-2 rounded-lg overflow-hidden"
-                          style={getMediaGridLayout(
-                            (tweet.isRetweet && tweet.originalPost && tweet.originalPost.mediaUrl
-                              ? tweet.originalPost.mediaUrl
-                              : tweet.mediaUrl || "")
-                              .split(',')
-                              .filter(Boolean)
-                              .slice(0, 4)
-                              .length
-                          )}
-                        >
-                          {(tweet.isRetweet && tweet.originalPost && tweet.originalPost.mediaUrl
-                            ? tweet.originalPost.mediaUrl
-                            : tweet.mediaUrl || "")
-                            .split(',')
-                            .filter(Boolean)
-                            .slice(0, 4)
-                            .map((mediaFile, index) => {
-                              const isVideo = mediaFile.match(/\.(mp4|webm|ogg)$/i);
-                              const mediaFiles = (tweet.isRetweet && tweet.originalPost && tweet.originalPost.mediaUrl
-                                ? tweet.originalPost.mediaUrl
-                                : tweet.mediaUrl)
-                                ? (tweet.isRetweet && tweet.originalPost && tweet.originalPost.mediaUrl
-                                  ? tweet.originalPost.mediaUrl
-                                  : tweet.mediaUrl || "").split(',').filter(Boolean)
-                                : [];
-                              const mediaStyle = getMediaItemStyle(Math.min(mediaFiles.length, 4), index);
-
-                              return (
-                                <div
-                                  key={index}
-                                  style={mediaStyle}
-                                  className="relative rounded-lg overflow-hidden cursor-pointer group border-2 border-orange/40 hover:border-orange transition-all duration-200"
-                                >
-                                  {isVideo ? (
-                                    <>
-                                      <video
-                                        src={getImageUrl(mediaFile)}
-                                        className="w-full h-full object-cover"
-                                      />
-                                      <div className="absolute inset-0 flex items-center justify-center">
-                                        <div className="bg-black/50 rounded-full p-2">
-                                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white" className="w-6 h-6">
-                                            <path fillRule="evenodd" d="M4.5 5.653c0-1.426 1.529-2.33 2.779-1.643l11.54 6.348c1.295.712 1.295 2.573 0 3.285L7.28 19.991c-1.25.687-2.779-.217-2.779-1.643V5.653z" clipRule="evenodd" />
-                                          </svg>
-                                        </div>
-                                      </div>
-                                    </>
-                                  ) : (
-                                    <img
-                                      src={getImageUrl(mediaFile)}
-                                      alt={`Média ${index + 1}`}
-                                      className="w-full h-full object-cover"
-                                    />
-                                  )}
-
-                                  {/* Indicateur s'il y a plus de médias */}
-                                  {mediaFiles.length > 4 && index === 3 && (
-                                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center text-white text-xl font-bold">
-                                      +{mediaFiles.length - 4}
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })}
-                        </div>
-                      )}
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="mb-4">
-            <textarea
-              placeholder="Ajoutez un commentaire (optionnel)"
-              value={retweetComment}
-              onChange={(e) => setRetweetComment(e.target.value)}
-              className="w-full p-3 border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-orange"
-              rows={3}
-            />
-          </div>
-
-          <div className="flex space-x-3">
-            <button
-              onClick={handleDirectRetweet}
-              className="px-4 py-2 bg-gray-200 text-gray-800 rounded-full hover:bg-gray-300 font-medium flex-1"
-            >
-              Repartager sans commentaire
-            </button>
-            <button
-              onClick={handleRetweetWithComment}
-              disabled={!retweetComment.trim()}
-              className={`px-4 py-2 rounded-full font-medium flex-1 ${retweetComment.trim()
-                ? 'bg-orange text-white hover:bg-orange/90'
-                : 'bg-orange/50 text-white cursor-not-allowed'
-                }`}
-            >
-              Repartager avec commentaire
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  // Si c'est un retweet, on ajoute une note en haut
-  const RetweetHeader = () => {
-    if (!tweet.isRetweet || !tweet.originalUser) return null;
-
-    return (
-      <div className="flex items-center mb-2 text-orange text-sm">
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-        </svg>
-        <span>
-          Repartagé d'un tweet de <span className="font-medium hover:underline cursor-pointer" onClick={() => tweet.originalUser && onUserProfileClick?.(tweet.originalUser.id)}>
-            @{tweet.originalUser.mention}
-          </span>
-        </span>
-      </div>
-    );
-  };
-
-  // Vérifier si l'utilisateur est un abonné de l'auteur
-  useEffect(() => {
-    if (user && tweet.user && tweet.user.id !== user.id && !isBlockedByAuthor) {
-      setCheckingFollowStatus(true);
-      checkFollowStatus(tweet.user.id)
-        .then(res => {
-          setIsFollowing(res.isFollowing);
-        })
-        .catch(err => {
-          console.error("Erreur lors de la vérification du statut d'abonnement:", err);
-        })
-        .finally(() => {
-          setCheckingFollowStatus(false);
-        });
-    }
-  }, [user, tweet.user, isBlockedByAuthor]);
-
-  const handleToggleLock = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-
-    if (!user || togglingLock) return;
-
-    setTogglingLock(true);
-    try {
-      const response = await toggleLockPost(currentTweet.id);
-      setIsLocked(response.isLocked);
-
-      // Met à jour le tweet courant
-      setCurrentTweet(prev => ({
-        ...prev,
-        isLocked: response.isLocked
-      }));
-
-      // Appelle le callback de mise à jour si présent
-      if (onPostUpdated) {
-        onPostUpdated({
-          ...currentTweet,
-          isLocked: response.isLocked
-        });
-      }
-
-      // Si le post est verrouillé, masquer les réponses
-      if (response.isLocked) {
-        setReplies([]);
-        setShowReplies(false);
-      }
-    } catch (error) {
-      console.error("Erreur lors du verrouillage/déverrouillage des commentaires:", error);
-    } finally {
-      setTogglingLock(false);
-    }
-  };
-
+  // Rendu normal du composant si ni banni ni censuré
   return (
     <div className="border-b border-gray-300">
       {errorMessage && (
@@ -1750,153 +1643,7 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
         onClose={() => setIsRetweetModalOpen(false)}
         title="Retweeter"
       >
-        <div className="p-4">
-          {isOriginalUserPrivate && (
-            <div className="mb-4 p-3 bg-light-orange border border-orange rounded-lg text-dark-orange text-sm">
-              <div className="flex items-center">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-[#F05E1D]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                </svg>
-                <span>Le compte à l'origine de ce post est privé, la visualisation sera restreinte sur votre republication</span>
-              </div>
-            </div>
-          )}
-          <div className="mb-4 flex space-x-3 border-b pb-4 text-sm">
-            <img
-              src={
-                // Si c'est un retweet, on utilise l'avatar de l'utilisateur du post original
-                tweet.isRetweet && tweet.originalPost && tweet.originalPost.user?.avatar
-                  ? getImageUrl(tweet.originalPost.user.avatar)
-                  : tweet.user?.avatar
-                    ? getImageUrl(tweet.user.avatar)
-                    : '/default_pp.webp'
-              }
-              alt={`${tweet.isRetweet && tweet.originalPost && tweet.originalPost.user?.name
-                ? tweet.originalPost.user.name
-                : tweet.user?.name
-                } avatar`}
-              className="h-10 w-10 rounded-full"
-            />
-            <div className="flex-1">
-              <div className="font-bold">
-                {tweet.isRetweet && tweet.originalPost && tweet.originalPost.user?.name
-                  ? tweet.originalPost.user.name
-                  : tweet.user?.name}
-              </div>
-              <p className="mt-1">
-                {tweet.isRetweet && tweet.originalPost
-                  ? tweet.originalPost.content
-                  : tweet.content}
-              </p>
-
-              {/* Affichage des médias du tweet */}
-              {(tweet.isRetweet && tweet.originalPost && tweet.originalPost.mediaUrl
-                ? tweet.originalPost.mediaUrl
-                : tweet.mediaUrl) && (
-                  <div
-                    className="mt-3 grid gap-2 rounded-lg overflow-hidden"
-                    style={getMediaGridLayout(
-                      (tweet.isRetweet && tweet.originalPost && tweet.originalPost.mediaUrl
-                        ? tweet.originalPost.mediaUrl
-                        : tweet.mediaUrl || "")
-                        .split(',')
-                        .filter(Boolean)
-                        .slice(0, 4)
-                        .length
-                    )}
-                  >
-                    {(tweet.isRetweet && tweet.originalPost && tweet.originalPost.mediaUrl
-                      ? tweet.originalPost.mediaUrl
-                      : tweet.mediaUrl || "")
-                      .split(',')
-                      .filter(Boolean)
-                      .slice(0, 4)
-                      .map((mediaFile, index) => {
-                        const isVideo = mediaFile.match(/\.(mp4|webm|ogg)$/i);
-                        const mediaFiles = (tweet.isRetweet && tweet.originalPost && tweet.originalPost.mediaUrl
-                          ? tweet.originalPost.mediaUrl
-                          : tweet.mediaUrl)
-                          ? (tweet.isRetweet && tweet.originalPost && tweet.originalPost.mediaUrl
-                            ? tweet.originalPost.mediaUrl
-                            : tweet.mediaUrl || "").split(',').filter(Boolean)
-                          : [];
-                        const mediaStyle = getMediaItemStyle(Math.min(mediaFiles.length, 4), index);
-
-                        return (
-                          <div
-                            key={index}
-                            style={mediaStyle}
-                            className="relative rounded-lg overflow-hidden border-2 border-orange/40 hover:border-orange transition-all duration-200"
-                          >
-                            {isVideo ? (
-                              <>
-                                <video
-                                  src={getImageUrl(mediaFile)}
-                                  className="w-full h-full object-cover"
-                                />
-                                <div className="absolute inset-0 flex items-center justify-center">
-                                  <div className="bg-black/50 rounded-full p-2">
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white" className="w-6 h-6">
-                                      <path fillRule="evenodd" d="M4.5 5.653c0-1.426 1.529-2.33 2.779-1.643l11.54 6.348c1.295.712 1.295 2.573 0 3.285L7.28 19.991c-1.25.687-2.779-.217-2.779-1.643V5.653z" clipRule="evenodd" />
-                                    </svg>
-                                  </div>
-                                </div>
-                              </>
-                            ) : (
-                              <img
-                                src={getImageUrl(mediaFile)}
-                                alt={`Média ${index + 1}`}
-                                className="w-full h-full object-cover"
-                              />
-                            )}
-
-                            {/* Indicateur s'il y a plus de médias */}
-                            {mediaFiles.length > 4 && index === 3 && (
-                              <div className="absolute inset-0 bg-black/50 flex items-center justify-center text-white text-xl font-bold">
-                                +{mediaFiles.length - 4}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                  </div>
-                )}
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <div>
-              <textarea
-                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange focus:border-orange"
-                rows={3}
-                placeholder="Ajouter un commentaire (optionnel)"
-                value={retweetComment}
-                onChange={(e) => setRetweetComment(e.target.value)}
-              ></textarea>
-
-              <div className="mt-3 flex items-center justify-between">
-                <div className="text-sm text-gray-500">
-                  {retweetComment ? "Retweet avec commentaire" : "Retweet sans commentaire"}
-                </div>
-                <div className={`text-sm ${retweetComment.length > 250 ? "text-red-500" : "text-gray-500"}`}>
-                  {retweetComment.length}/280
-                </div>
-              </div>
-
-              <Button
-                onClick={retweetComment.trim() ? handleRetweetWithComment : handleDirectRetweet}
-                variant="full"
-                className="mt-3 w-full py-2 flex items-center justify-center gap-2"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                Retweeter
-              </Button>
-
-            </div>
-          </div>
-        </div>
+        <RetweetModal />
       </Modal>
     </div>
   );
