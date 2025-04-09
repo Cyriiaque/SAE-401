@@ -32,6 +32,9 @@ class Post
     #[ORM\Column(type: 'boolean', options: ['default' => false])]
     private ?bool $isPinned = false;
 
+    #[ORM\Column(type: 'boolean', options: ['default' => false])]
+    private ?bool $is_locked = false;
+
     #[ORM\ManyToOne(targetEntity: self::class)]
     #[ORM\JoinColumn(nullable: true, onDelete: "SET NULL")]
     private ?self $originalPost = null;
@@ -229,6 +232,17 @@ class Post
     public function setOriginalUser(?User $originalUser): static
     {
         $this->originalUser = $originalUser;
+        return $this;
+    }
+
+    public function isLocked(): ?bool
+    {
+        return $this->is_locked;
+    }
+
+    public function setIsLocked(bool $is_locked): static
+    {
+        $this->is_locked = $is_locked;
         return $this;
     }
 }

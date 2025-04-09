@@ -22,8 +22,6 @@ const EditProfileModal = ({
     const [banner, setBanner] = useState<File | null>(null);
     const [avatarPreview, setAvatarPreview] = useState<string | null>(getImageUrl(user.avatar));
     const [bannerPreview, setBannerPreview] = useState<string | null>(getImageUrl(user.banner));
-    const [isPrivate, setIsPrivate] = useState(user.isPrivate || false);
-    const [followerRestriction, setFollowerRestriction] = useState(user.followerRestriction || false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [imageImportType, setImageImportType] = useState<'avatar' | 'banner' | null>(null);
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -223,9 +221,7 @@ const EditProfileModal = ({
             const userData: Partial<User> = {
                 name,
                 mention,
-                biography,
-                isPrivate,
-                followerRestriction
+                biography
             };
 
             // Gérer l'upload de l'avatar
@@ -276,18 +272,13 @@ const EditProfileModal = ({
             await onSave(userData);
 
             // Mise à jour des infos locales de l'utilisateur si succès
-            setUser(prev => {
-                if (!prev) return null;
-                return {
-                    ...prev,
-                    name,
-                    mention,
-                    biography,
-                    isPrivate,
-                    followerRestriction,
-                    avatar: avatarPreview ? user.avatar : prev.avatar,
-                    banner: bannerPreview ? user.banner : prev.banner
-                };
+            setUser({
+                ...user,
+                name,
+                mention,
+                biography,
+                avatar: avatarPreview ? user.avatar : user.avatar,
+                banner: bannerPreview ? user.banner : user.banner
             });
 
             onClose();
@@ -457,44 +448,6 @@ const EditProfileModal = ({
                                 className="w-full p-2 border rounded"
                                 rows={4}
                             />
-                        </div>
-
-                        {/* Option Compte Privé */}
-                        <div className="mb-4">
-                            <div className="flex items-center space-x-2">
-                                <input
-                                    type="checkbox"
-                                    id="private-account"
-                                    checked={isPrivate}
-                                    onChange={(e) => setIsPrivate(e.target.checked)}
-                                    className="h-4 w-4 text-orange focus:ring-orange rounded"
-                                />
-                                <label htmlFor="private-account" className="text-gray-700">
-                                    Compte privé
-                                </label>
-                            </div>
-                            <p className="text-gray-500 text-xs ml-6">
-                                Lorsque cette option est activée, seuls vos abonnés peuvent voir vos posts.
-                            </p>
-                        </div>
-
-                        {/* Option Restriction des réponses */}
-                        <div className="mb-4">
-                            <div className="flex items-center space-x-2">
-                                <input
-                                    type="checkbox"
-                                    id="follower-restriction"
-                                    checked={followerRestriction}
-                                    onChange={(e) => setFollowerRestriction(e.target.checked)}
-                                    className="h-4 w-4 text-orange focus:ring-orange rounded"
-                                />
-                                <label htmlFor="follower-restriction" className="text-gray-700">
-                                    Limiter les réponses aux abonnés
-                                </label>
-                            </div>
-                            <p className="text-gray-500 text-xs ml-6">
-                                Lorsque cette option est activée, seuls vos abonnés peuvent répondre à vos posts.
-                            </p>
                         </div>
                     </div>
 

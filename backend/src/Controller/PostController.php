@@ -103,7 +103,7 @@ class PostController extends AbstractController
     ): JsonResponse {
         // Pagination
         $page = $request->query->getInt('page', 1);
-        $limit = 20;
+        $limit = 5;
         $offset = ($page - 1) * $limit;
 
         // Créer une requête personnalisée pour exclure les posts des utilisateurs en mode privé
@@ -261,6 +261,11 @@ class PostController extends AbstractController
         $post->setContent($data['content']);
         $post->setIdUser($user);
         $post->setCreatedAt(new \DateTimeImmutable('now', new \DateTimeZone('Europe/Paris')));
+
+        // Gestion du verrouillage des commentaires
+        if (isset($data['isLocked']) && is_bool($data['isLocked'])) {
+            $post->setIsLocked($data['isLocked']);
+        }
 
         // Gestion des médias (jusqu'à 10)
         if (isset($data['mediaUrls']) && is_array($data['mediaUrls']) && count($data['mediaUrls']) <= 10) {
@@ -560,6 +565,11 @@ class PostController extends AbstractController
             $post->setMediaUrl(implode(',', $data['mediaUrls']));
         }
 
+        // Mise à jour du statut de verrouillage si présent
+        if (isset($data['isLocked'])) {
+            $post->setIsLocked($data['isLocked']);
+        }
+
         // Les modifications du post original n'affectent pas les retweets existants
         // car les retweets contiennent déjà une copie du contenu et des médias
 
@@ -815,6 +825,7 @@ class PostController extends AbstractController
             'mediaUrl' => $post->getMediaUrl(),
             'isCensored' => $post->isCensored(),
             'isPinned' => $post->isPinned(),
+            'isLocked' => $post->isLocked(),
             'retweets' => $post->getRetweetCount(),
             'isRetweet' => $post->isRetweet()
         ];
@@ -1002,5 +1013,33 @@ class PostController extends AbstractController
             ->getQuery();
 
         return (int)$query->getSingleScalarResult() > 0;
+    }
+
+    #[Route('/posts/{id}/toggle-lock', name: 'posts.toggle_lock', methods: ['PATCH'])]
+    #[IsGranted('ROLE_USER')]
+    public function toggleLock(
+        int $id,
+        PostRepository $postRepository,
+        EntityManagerInterface $entityManager,
+        #[CurrentUser] $user
+    ): JsonResponse {
+        $post = $postRepository->find($id);
+
+        if (!$post) {
+            return $this->json(['message' => 'Post non trouvé'], Response::HTTP_NOT_FOUND);
+        }
+
+        // Vérifier si l'utilisateur est le propriétaire du post
+        if ($post->getIdUser()->getId() !== $user->getId()) {
+            return $this->json(['message' => 'Vous n\'êtes pas autorisé à verrouiller ce post'], Response::HTTP_FORBIDDEN);
+        }
+
+        // Inverser l'état de verrouillage
+        $post->setIsLocked(!$post->isLocked());
+        $entityManager->flush();
+
+        return $this->json([
+            'isLocked' => $post->isLocked()
+        ]);
     }
 }

@@ -1,4 +1,4 @@
-import { Tweet, fetchReplies, createReply, Reply, getLikeStatus, getImageUrl, checkBlockStatus, fetchUsersByQuery, retweetPost, getRetweetStatus, checkFollowStatus } from '../lib/loaders';
+import { Tweet, fetchReplies, createReply, Reply, getLikeStatus, getImageUrl, checkBlockStatus, fetchUsersByQuery, retweetPost, getRetweetStatus, checkFollowStatus, toggleLockPost } from '../lib/loaders';
 import { useState, useEffect, useRef } from 'react';
 import { likePost, unlikePost } from '../lib/loaders';
 import { useAuth } from '../contexts/AuthContext';
@@ -174,6 +174,8 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
   // État pour suivre si l'utilisateur est un abonné de l'auteur du post
   const [isFollowing, setIsFollowing] = useState<boolean>(false);
   const [checkingFollowStatus, setCheckingFollowStatus] = useState<boolean>(false);
+  const [isLocked, setIsLocked] = useState<boolean>(tweet.isLocked || false);
+  const [togglingLock, setTogglingLock] = useState<boolean>(false);
 
   // Nouvelle logique pour gérer les utilisateurs bannis
   const isBanned = tweet.user?.isbanned ?? false;
@@ -1120,6 +1122,42 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
     }
   }, [user, tweet.user, isBlockedByAuthor]);
 
+  const handleToggleLock = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+
+    if (!user || togglingLock) return;
+
+    setTogglingLock(true);
+    try {
+      const response = await toggleLockPost(currentTweet.id);
+      setIsLocked(response.isLocked);
+
+      // Met à jour le tweet courant
+      setCurrentTweet(prev => ({
+        ...prev,
+        isLocked: response.isLocked
+      }));
+
+      // Appelle le callback de mise à jour si présent
+      if (onPostUpdated) {
+        onPostUpdated({
+          ...currentTweet,
+          isLocked: response.isLocked
+        });
+      }
+
+      // Si le post est verrouillé, masquer les réponses
+      if (response.isLocked) {
+        setReplies([]);
+        setShowReplies(false);
+      }
+    } catch (error) {
+      console.error("Erreur lors du verrouillage/déverrouillage des commentaires:", error);
+    } finally {
+      setTogglingLock(false);
+    }
+  };
+
   return (
     <div className="border-b border-gray-300">
       {errorMessage && (
@@ -1447,6 +1485,39 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
                   </svg>
                   <span className={`${isLiked ? 'text-orange' : 'text-inherit group-hover:text-orange'}`}>{likes}</span>
                 </button>
+
+                {/* Bouton de verrouillage des commentaires (visible uniquement pour l'auteur) */}
+                {user?.id === currentTweet.user?.id && (
+                  <button
+                    onClick={handleToggleLock}
+                    className={`flex items-center space-x-2 cursor-pointer group ${isLocked ? 'text-orange' : 'text-gray-500 hover:text-orange'}`}
+                    disabled={togglingLock}
+                    title={isLocked ? "Déverrouiller les commentaires" : "Verrouiller les commentaires"}
+                  >
+                    <svg
+                      className={`h-5 w-5 fill-none ${isLocked ? 'stroke-orange' : 'group-hover:stroke-orange'}`}
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      {isLocked ? (
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+                        />
+                      ) : (
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"
+                        />
+                      )}
+                    </svg>
+                  </button>
+                )}
+
                 {user?.id === currentTweet.user?.id && onDelete && (
                   <div className="flex items-center space-x-4">
                     <button
@@ -1510,6 +1581,7 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
             !userHasReplied &&
             !isBlockedByAuthor &&
             !isReadOnly &&
+            !isLocked &&
             // Ne pas afficher le formulaire si les réponses sont limitées aux abonnés et que l'utilisateur n'est pas abonné
             !(tweet.user?.followerRestriction && !isFollowing && tweet.user.id !== user.id) && (
               <div ref={replyFormRef} className="relative pt-2">
@@ -1570,6 +1642,16 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
           {isBlockedByAuthor && (
             <div className="p-4 my-2 bg-gray-100 rounded-lg text-center text-gray-600">
               <p>Vous ne pouvez pas répondre à ce post car l'auteur vous a bloqué.</p>
+            </div>
+          )}
+
+          {/* Message si le post est verrouillé */}
+          {isLocked && (
+            <div className="p-4 my-2 bg-orange-50 rounded-lg text-center text-orange-600 flex items-center justify-center">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+              <p>Les commentaires sont verrouillés pour ce post.</p>
             </div>
           )}
 

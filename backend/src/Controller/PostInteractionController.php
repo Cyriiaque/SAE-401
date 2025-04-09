@@ -169,6 +169,11 @@ class PostInteractionController extends AbstractController
             return $this->json(['message' => 'Ce compte est en mode lecture seule. Les réponses sont désactivées.'], Response::HTTP_FORBIDDEN);
         }
 
+        // Vérifier si le post est verrouillé
+        if ($post->isLocked()) {
+            return $this->json(['message' => 'Les réponses à ce post sont verrouillées.'], Response::HTTP_FORBIDDEN);
+        }
+
         // Vérifier si l'auteur a activé la restriction des réponses aux abonnés
         if ($postAuthor && $postAuthor->hasFollowerRestriction() && $postAuthor->getId() !== $user->getId()) {
             // Vérifier si l'utilisateur actuel suit l'auteur du post
@@ -254,6 +259,14 @@ class PostInteractionController extends AbstractController
 
         if (!$post) {
             return $this->json(['message' => 'Post non trouvé'], Response::HTTP_NOT_FOUND);
+        }
+
+        // Si le post est verrouillé, ne pas afficher les réponses
+        if ($post->isLocked()) {
+            return $this->json([
+                'replies' => [],
+                'isLocked' => true
+            ]);
         }
 
         // Récupérer toutes les interactions qui ont une réponse non vide

@@ -54,6 +54,7 @@ export interface Tweet {
     isLiked: boolean;
     isCensored?: boolean;
     isPinned?: boolean;
+    isLocked?: boolean;
     retweets?: number; // Nombre de retweets
     isRetweet?: boolean; // Si c'est un retweet
     originalPost?: { // Le post original retourné par l'API
@@ -199,41 +200,46 @@ export async function fetchPosts(page: number): Promise<PostsResponse> {
     return response.json();
 }
 
-export async function createPost(content: string, mediaUrls?: string[]): Promise<Tweet> {
+export async function createPost(content: string, mediaUrls?: string[], isLocked?: boolean): Promise<Tweet> {
     const token = localStorage.getItem('token');
     if (!token) {
-        logout();
         throw new Error('Non authentifié');
     }
 
-    try {
-        const response = await fetch(`${API_BASE_URL}/addpost`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify({
-                content: content,
-                mediaUrls: mediaUrls
-            })
-        });
-
-        if (!response.ok) {
-            const error = await response.json();
-
-            if (response.status === 401) {
-                logout();
-                throw new Error('Session expirée - veuillez vous reconnecter');
-            }
-
-            throw new Error(error.errors || error.message || 'Erreur lors de la création du post');
-        }
-
-        return await response.json();
-    } catch (error) {
-        throw error;
+    const postData: any = { content };
+    if (mediaUrls && mediaUrls.length > 0) {
+        postData.mediaUrls = mediaUrls;
     }
+    if (isLocked !== undefined) {
+        postData.isLocked = isLocked;
+    }
+
+    const response = await fetch(`${API_BASE_URL}/addpost`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(postData)
+    });
+
+    if (!response.ok) {
+        if (response.status === 401) {
+            logout();
+            throw new Error('Session expirée');
+        }
+        throw new Error('Erreur lors de la création du post');
+    }
+
+    const data = await response.json();
+
+    // Émettre un événement personnalisé pour notifier qu'un tweet a été publié
+    const tweetEvent = new CustomEvent('tweetPublished', {
+        detail: data
+    });
+    window.dispatchEvent(tweetEvent);
+
+    return data;
 }
 
 export async function fetchUsers(): Promise<User[]> {
@@ -504,45 +510,38 @@ export async function deletePost(postId: number): Promise<void> {
     }
 }
 
-export async function updatePost(postId: number, content: string, mediaUrls?: string[]): Promise<Tweet> {
+export async function updatePost(postId: number, content: string, mediaUrls?: string[], isLocked?: boolean): Promise<Tweet> {
     const token = localStorage.getItem('token');
     if (!token) {
-        logout();
         throw new Error('Non authentifié');
     }
 
-    try {
-        const response = await fetch(`${API_BASE_URL}/posts/${postId}`, {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify({
-                content: content,
-                mediaUrls: mediaUrls
-            })
-        });
-
-        if (!response.ok) {
-            const error = await response.json();
-
-            if (response.status === 401) {
-                logout();
-                throw new Error('Session expirée - veuillez vous reconnecter');
-            }
-
-            if (response.status === 403) {
-                throw new Error('Vous n\'êtes pas autorisé à modifier ce post');
-            }
-
-            throw new Error(error.errors || error.message || 'Erreur lors de la modification du post');
-        }
-
-        return await response.json();
-    } catch (error) {
-        throw error;
+    const postData: any = { content };
+    if (mediaUrls && mediaUrls.length > 0) {
+        postData.mediaUrls = mediaUrls;
     }
+    if (isLocked !== undefined) {
+        postData.isLocked = isLocked;
+    }
+
+    const response = await fetch(`${API_BASE_URL}/posts/${postId}`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(postData)
+    });
+
+    if (!response.ok) {
+        if (response.status === 401) {
+            logout();
+            throw new Error('Session expirée');
+        }
+        throw new Error('Erreur lors de la mise à jour du post');
+    }
+
+    return response.json();
 }
 
 export async function updateUserSettings(data: Partial<User>): Promise<User> {
@@ -986,7 +985,7 @@ export async function togglePostCensorship(postId: number): Promise<{ isCensored
     }
 
     const response = await fetch(`${API_BASE_URL}/posts/${postId}/toggle-censorship`, {
-        method: 'PATCH',
+        method: 'PUT',
         headers: {
             'Authorization': `Bearer ${token}`
         }
@@ -1013,7 +1012,27 @@ export async function togglePinPost(postId: number): Promise<{ isPinned: boolean
     });
 
     if (!response.ok) {
-        throw new Error('Erreur lors de l\'épinglage/désépinglage du post');
+        throw new Error('Erreur lors du changement de statut d\'épinglage');
+    }
+
+    return response.json();
+}
+
+export async function toggleLockPost(postId: number): Promise<{ isLocked: boolean }> {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('Non authentifié');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/posts/${postId}/toggle-lock`, {
+        method: 'PATCH',
+        headers: {
+            'Authorization': `Bearer ${token}`
+        }
+    });
+
+    if (!response.ok) {
+        throw new Error('Erreur lors du verrouillage/déverrouillage du post');
     }
 
     return response.json();

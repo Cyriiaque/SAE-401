@@ -30,6 +30,7 @@ export default function PostModal({
     const [mediaPreviews, setMediaPreviews] = useState<string[]>([]);
     const [mediaTypes, setMediaTypes] = useState<('image' | 'video')[]>([]);
     const [existingMediaUrls, setExistingMediaUrls] = useState<string[]>([]);
+    const [isLocked, setIsLocked] = useState<boolean>(tweet?.isLocked || false);
     const [processingFiles, setProcessingFiles] = useState<Record<string, {
         id: string,
         name: string,
@@ -1128,7 +1129,8 @@ export default function PostModal({
                 updatedTweet = await updatePost(
                     tweet.id,
                     content,
-                    allMediaUrls.length > 0 ? allMediaUrls : undefined
+                    allMediaUrls.length > 0 ? allMediaUrls : undefined,
+                    isLocked
                 );
 
                 // Supprimer les médias qui ne sont plus utilisés
@@ -1154,7 +1156,8 @@ export default function PostModal({
                 // Mode création: Créer un nouveau post
                 const newTweet = await createPost(
                     content,
-                    allMediaUrls.length > 0 ? allMediaUrls : undefined
+                    allMediaUrls.length > 0 ? allMediaUrls : undefined,
+                    isLocked
                 );
 
                 if (onTweetPublished) {
@@ -1517,6 +1520,36 @@ export default function PostModal({
                             {isSubmitting
                                 ? mode === 'edit' ? 'Mise à jour...' : 'Publication...'
                                 : mode === 'edit' ? 'Modifier' : 'Publier'}
+                        </button>
+                    </div>
+                    <div className="flex items-center justify-between mt-2">
+                        <button
+                            type="button"
+                            onClick={() => setIsLocked(!isLocked)}
+                            className={`flex items-center space-x-2 px-3 py-2 rounded-lg transition-all duration-200 ${isLocked
+                                ? 'bg-light-orange text-orange hover:bg-soft-orange/50'
+                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                }`}
+                        >
+                            <svg
+                                className={`h-5 w-5 transition-colors duration-200 ${isLocked ? 'text-orange' : 'text-gray-500'
+                                    }`}
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                            >
+                                <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d={isLocked
+                                        ? "M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+                                        : "M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"}
+                                />
+                            </svg>
+                            <span className="text-sm font-medium">
+                                {isLocked ? 'Commentaires verrouillés' : 'Commentaires déverrouillés'}
+                            </span>
                         </button>
                     </div>
                 </form>
