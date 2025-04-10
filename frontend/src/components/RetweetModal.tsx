@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Tweet, retweetPost, getImageUrl } from '../lib/loaders';
 import Button from '../ui/buttons';
+import Avatar from '../ui/Avatar';
 
 interface RetweetModalProps {
     tweet: Tweet;
@@ -124,7 +125,7 @@ const RetweetModal: React.FC<RetweetModalProps> = ({
                 <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
                     <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
                         <div className="sm:flex sm:items-start">
-                            <div className="mt-3 text-center sm:mt-0 sm:text-left w-full">
+                            <div className="mt-3 text-left w-full">
                                 <div className="flex justify-between items-center mb-4">
                                     <h3 className="text-lg leading-6 font-medium text-gray-900">
                                         Retweeter
@@ -158,7 +159,7 @@ const RetweetModal: React.FC<RetweetModalProps> = ({
                                 )}
 
                                 <div className="mb-4 flex space-x-3 border-b pb-4 text-sm">
-                                    <img
+                                    <Avatar
                                         src={
                                             tweet.isRetweet && tweet.originalPost && tweet.originalPost.user?.avatar
                                                 ? getImageUrl(tweet.originalPost.user.avatar)
@@ -170,7 +171,7 @@ const RetweetModal: React.FC<RetweetModalProps> = ({
                                             ? tweet.originalPost.user.name
                                             : tweet.user?.name
                                             } avatar`}
-                                        className="h-10 w-10 rounded-full"
+                                        size="sm"
                                     />
                                     <div className="flex-1">
                                         <div className="font-bold">

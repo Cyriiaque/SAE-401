@@ -2,9 +2,8 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import Sidebar from '../components/Sidebar';
-import Button from '../ui/buttons';
-import NotificationItem from '../components/NotificationItem';
-import { Notification, fetchNotifications, markAllNotificationsAsRead, searchNotifications } from '../lib/loaders';
+import NotificationItem from '../ui/NotificationItem';
+import { Notification, fetchNotifications, markAllNotificationsAsRead } from '../lib/loaders';
 
 export default function Notifications() {
     const { user } = useAuth();

@@ -1,5 +1,5 @@
 import { ReactNode } from 'react';
-import NotificationBell from './NotificationBell';
+import NotificationBell from '../ui/NotificationBell';
 
 interface HeaderProps {
     title: string;

@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { usePostModal } from '../contexts/PostModalContext';
 import TweetCard from '../components/TweetCard';
 import Sidebar from '../components/Sidebar';
 import { fetchPosts, Tweet, fetchFollowedPosts, getImageUrl, fetchBlockedUsers, User, searchPosts, fetchUsersByQuery } from '../lib/loaders';
@@ -42,40 +41,6 @@ const HomeHeader = ({ refreshPosts }: { refreshPosts: () => void }) => {
         <span className="hidden lg:inline">Rafraîchir les posts</span>
       </Button>
     </Header>
-  );
-};
-
-// Composant pour la navigation par onglets
-const TabNavigation = ({
-  activeTab,
-  handleTabChange
-}: {
-  activeTab: 'actualite' | 'suivis',
-  handleTabChange: (tab: 'actualite' | 'suivis') => void
-}) => {
-  return (
-    <div className="sticky top-0 bg-white z-10 border-b border-gray-200">
-      <div className="flex">
-        <button
-          onClick={() => handleTabChange('actualite')}
-          className={`flex-1 p-4 text-center font-bold transition-colors cursor-pointer ${activeTab === 'actualite'
-            ? 'text-orange border-b-2 border-orange'
-            : 'text-gray-500 hover:bg-gray-100'
-            }`}
-        >
-          Actualité
-        </button>
-        <button
-          onClick={() => handleTabChange('suivis')}
-          className={`flex-1 p-4 text-center font-bold transition-colors cursor-pointer ${activeTab === 'suivis'
-            ? 'text-orange border-b-2 border-orange'
-            : 'text-gray-500 hover:bg-gray-100'
-            }`}
-        >
-          Suivis
-        </button>
-      </div>
-    </div>
   );
 };
 
@@ -243,16 +208,6 @@ export default function Home() {
 
       // Filtre par type de contenu
       if (contentTypeFilter) {
-        // Débogage: afficher les posts avant filtrage
-        console.log('Posts avant filtrage par type de contenu:',
-          filteredPosts.map(post => ({
-            id: post.id,
-            content: post.content.substring(0, 20) + '...',
-            mediaUrl: post.mediaUrl,
-            hasMedia: post.mediaUrl && post.mediaUrl.trim() !== ''
-          }))
-        );
-
         filteredPosts = filteredPosts.filter(post => {
           if (contentTypeFilter === 'media') {
             return post.mediaUrl && post.mediaUrl.trim() !== '';
@@ -261,16 +216,6 @@ export default function Home() {
           }
           return true;
         });
-
-        // Débogage: afficher les posts après filtrage
-        console.log('Posts après filtrage par type de contenu:',
-          filteredPosts.map(post => ({
-            id: post.id,
-            content: post.content.substring(0, 20) + '...',
-            mediaUrl: post.mediaUrl,
-            hasMedia: post.mediaUrl && post.mediaUrl.trim() !== ''
-          }))
-        );
       }
 
       // Recherche d'utilisateurs
@@ -363,10 +308,7 @@ export default function Home() {
 
   // Mettre à jour la liste des utilisateurs bloqués lorsque le statut de blocage change
   useEffect(() => {
-    const handleBlockStatusChanged = (event: Event) => {
-      // Conversion de type sécurisée
-      const customEvent = event as CustomEvent<{ userId: number, isBlocked: boolean }>;
-
+    const handleBlockStatusChanged = () => {
       // Recharger la liste des utilisateurs bloqués
       const updateBlockedUsers = async () => {
         try {

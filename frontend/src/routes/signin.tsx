@@ -14,7 +14,6 @@ export default function SignIn() {
   const [success, setSuccess] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState('');
-  const [isSuccess, setIsSuccess] = useState(false);
 
   useEffect(() => {
     if (searchParams.get('verified') === 'true') {
@@ -52,10 +51,8 @@ export default function SignIn() {
     try {
       const response = await resendVerificationEmail(email);
       setMessage(response.message);
-      setIsSuccess(true);
     } catch (error) {
       setMessage((error as Error).message);
-      setIsSuccess(false);
     }
   };
 
@@ -81,6 +78,11 @@ export default function SignIn() {
           {success && (
             <div className="text-green-500 text-sm text-center">
               {success}
+            </div>
+          )}
+          {message && (
+            <div className="text-blue-500 text-sm text-center">
+              {message}
             </div>
           )}
           <div className="space-y-4">

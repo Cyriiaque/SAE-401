@@ -3,6 +3,7 @@ import { getFollowRequests, respondToFollowRequest } from '../lib/loaders';
 import { useAuth } from '../contexts/AuthContext';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import Avatar from '../ui/Avatar';
 
 interface FollowRequest {
     id: number;
@@ -63,10 +64,10 @@ export const FollowRequests: React.FC = () => {
             {requests.map((request) => (
                 <div key={request.id} className="flex items-center justify-between p-4 bg-white rounded-lg shadow">
                     <div className="flex items-center space-x-4">
-                        <img
+                        <Avatar
                             src={request.user.avatar || '/default-avatar.png'}
                             alt={request.user.name}
-                            className="w-12 h-12 rounded-full"
+                            size="md"
                         />
                         <div>
                             <div className="font-semibold">{request.user.name}</div>

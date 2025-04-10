@@ -1,16 +1,14 @@
-import { Tweet, fetchReplies, createReply, Reply, getLikeStatus, getImageUrl, checkBlockStatus, fetchUsersByQuery, retweetPost, getRetweetStatus, checkFollowStatus, toggleLockPost } from '../lib/loaders';
+import { Tweet, fetchReplies, createReply, Reply, getLikeStatus, getImageUrl, checkBlockStatus, fetchUsersByQuery, getRetweetStatus, checkFollowStatus, toggleLockPost } from '../lib/loaders';
 import { useState, useEffect, useRef } from 'react';
-import { likePost, unlikePost } from '../lib/loaders';
+import { likePost } from '../lib/loaders';
 import { useAuth } from '../contexts/AuthContext';
 import PostModal from './PostModal';
 import Button from '../ui/buttons';
-import UserProfile from './UserProfile';
 import { useNavigate } from 'react-router-dom';
 import React from 'react';
-import { format } from 'date-fns';
-import { fr } from 'date-fns/locale';
 import { Link } from 'react-router-dom';
 import RetweetModal from './RetweetModal';
+import Avatar from '../ui/Avatar';
 
 interface TweetCardProps {
   tweet: Tweet;
@@ -168,11 +166,8 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
   const replyFormRef = useRef<HTMLDivElement>(null);
   const [displayedRepliesCount, setDisplayedRepliesCount] = useState<number>(3);
   const navigate = useNavigate();
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [isLoginModalOpen, setIsLoginModalOpen] = useState<boolean>(false);
   // État pour suivre si l'utilisateur est un abonné de l'auteur du post
   const [isFollowing, setIsFollowing] = useState<boolean>(false);
-  const [checkingFollowStatus, setCheckingFollowStatus] = useState<boolean>(false);
   const [isLocked, setIsLocked] = useState<boolean>(tweet.isLocked || false);
   const [togglingLock, setTogglingLock] = useState<boolean>(false);
 
@@ -205,7 +200,6 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
       if (!obj) return false;
 
       // Vérification spéciale pour l'utilisateur avec ID 6 (Logobi/atomic) qui a un compte privé
-      console.log("obj.isPrivate:", obj.isPrivate);
       if (obj.isPrivate === true) {
         return true;
       }
@@ -238,14 +232,6 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
     }
 
     setIsOriginalUserPrivate(isPrivate);
-
-    // Log pour debug
-    console.log("Tweet:", tweet);
-    console.log("isOriginalUserPrivate défini à:", isPrivate);
-    if (tweet.isRetweet) {
-      console.log("originalUser:", tweet.originalUser);
-      console.log("originalPost.user:", tweet.originalPost?.user);
-    }
   }, [tweet]);
 
   useEffect(() => {
@@ -344,16 +330,12 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
   // Vérifier si l'utilisateur est un abonné de l'auteur
   useEffect(() => {
     if (user && tweet.user && tweet.user.id !== user.id && !isBlockedByAuthor) {
-      setCheckingFollowStatus(true);
       checkFollowStatus(tweet.user.id)
         .then(res => {
           setIsFollowing(res.isFollowing);
         })
         .catch(err => {
           console.error("Erreur lors de la vérification du statut d'abonnement:", err);
-        })
-        .finally(() => {
-          setCheckingFollowStatus(false);
         });
     }
   }, [user, tweet.user, isBlockedByAuthor]);
@@ -440,10 +422,7 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
       setUserHasReplied(true);
       setReplyContent('');
       setShowReplies(true);
-
-      console.log('Réponse ajoutée avec succès', newReply);
     } catch (error: any) {
-      console.error('Erreur lors de l\'envoi de la réponse:', error);
 
       if (error.message && error.message.includes('déjà répondu')) {
         setUserHasReplied(true);
@@ -533,7 +512,7 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
 
   const handleRetweetClick = () => {
     if (!user || !isAuthenticated) {
-      setIsLoginModalOpen(true);
+      navigate('/signin');
       return;
     }
 
@@ -758,10 +737,10 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
       <div className="p-4 hover:bg-gray-50 border-b border-gray-300">
         <div className="flex space-x-3 min-h-[48px]">
           <div className="relative flex-shrink-0">
-            <img
+            <Avatar
               src="/default_pp.webp"
               alt="Avatar par défaut"
-              className="h-12 w-12 rounded-full object-cover"
+              size="md"
             />
           </div>
           <div className="flex-1 min-w-0">
@@ -781,10 +760,11 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
         <div className="p-4 hover:bg-gray-50">
           <div className="flex space-x-3 min-h-[48px]">
             <div className="relative flex-shrink-0">
-              <img
+              <Avatar
                 src={currentTweet.user?.avatar ? getImageUrl(currentTweet.user.avatar) : '/default_pp.webp'}
                 alt={currentTweet.user?.name || 'Avatar par défaut'}
-                className="w-10 h-10 rounded-full object-cover cursor-pointer"
+                size="sm"
+                className="cursor-pointer"
                 onClick={() => currentTweet.user?.id && onUserProfileClick?.(currentTweet.user.id)}
               />
             </div>
@@ -853,10 +833,18 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
 
         <div className="flex space-x-3 min-h-[48px]">
           <div className="relative flex-shrink-0">
-            <img
+            <Avatar
               src={currentTweet.user?.avatar ? getImageUrl(currentTweet.user.avatar) : '/default_pp.webp'}
               alt={currentTweet.user?.name || 'Avatar par défaut'}
-              className="w-10 h-10 rounded-full object-cover cursor-pointer"
+              size="sm"
+              className="cursor-pointer sm:hidden"
+              onClick={() => currentTweet.user?.id && onUserProfileClick?.(currentTweet.user.id)}
+            />
+            <Avatar
+              src={currentTweet.user?.avatar ? getImageUrl(currentTweet.user.avatar) : '/default_pp.webp'}
+              alt={currentTweet.user?.name || 'Avatar par défaut'}
+              size="xl"
+              className="cursor-pointer hidden sm:block"
               onClick={() => currentTweet.user?.id && onUserProfileClick?.(currentTweet.user.id)}
             />
           </div>
@@ -881,12 +869,13 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
                   {tweet.originalPost.deleted ? (
                     <div>
                       <div className="flex items-center space-x-2 mb-2">
-                        {tweet.originalPost?.user ? (
+                        {tweet.originalPost?.user && (
                           <>
-                            <img
+                            <Avatar
                               src={tweet.originalPost.user.avatar ? getImageUrl(tweet.originalPost.user.avatar) : '/default_pp.webp'}
                               alt={tweet.originalPost.user.name || 'Avatar'}
-                              className="w-6 h-6 rounded-full"
+                              size="sm"
+                              className="cursor-pointer"
                               onClick={() => tweet.originalPost?.user?.id && onUserProfileClick?.(tweet.originalPost.user.id)}
                             />
                             <div>
@@ -899,14 +888,7 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
                               </div>
                             </div>
                           </>
-                        ) : (
-                          <span className="text-gray-500 dark:text-gray-400 italic">
-                            Post supprimé par son auteur
-                          </span>
                         )}
-                      </div>
-                      <div className="text-gray-800 dark:text-gray-200">
-                        {formatContentWithLinks(tweet.originalPost.content, handleHashtagClick, handleMentionClick)}
                       </div>
                       {tweet.originalPost?.mediaUrl && (
                         <div className="mt-2 grid gap-2 rounded-lg overflow-hidden"
@@ -927,10 +909,11 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
                       <p className="text-sm">Ce contenu provient d'un compte privé et n'est visible que par ses abonnés</p>
                       {tweet.originalPost?.user && (
                         <div className="flex items-center justify-center mt-2">
-                          <img
+                          <Avatar
                             src={tweet.originalPost.user.avatar ? getImageUrl(tweet.originalPost.user.avatar) : '/default_pp.webp'}
                             alt={tweet.originalPost.user.name || 'Avatar'}
-                            className="w-6 h-6 rounded-full mr-2 cursor-pointer"
+                            size="sm"
+                            className="cursor-pointer"
                             onClick={() => tweet.originalPost?.user?.id && onUserProfileClick?.(tweet.originalPost.user.id)}
                           />
                           <span className="font-medium">@{tweet.originalPost.user.mention}</span>
@@ -942,10 +925,11 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
                       <div className="flex items-center space-x-2 mb-2">
                         {tweet.originalPost?.user && (
                           <>
-                            <img
+                            <Avatar
                               src={tweet.originalPost.user.avatar ? getImageUrl(tweet.originalPost.user.avatar) : '/default_pp.webp'}
                               alt={tweet.originalPost.user.name || 'Avatar'}
-                              className="w-6 h-6 rounded-full cursor-pointer"
+                              size="sm"
+                              className="cursor-pointer"
                               onClick={() => tweet.originalPost?.user?.id && onUserProfileClick?.(tweet.originalPost.user.id)}
                             />
                             <div>
@@ -1276,10 +1260,10 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
 
                 <div className="pl-15 relative">
                   <div className="relative mb-2">
-                    <img
+                    <Avatar
                       src={user.avatar ? getImageUrl(user.avatar) : '/default_pp.webp'}
                       alt={user.name || 'Avatar par défaut'}
-                      className="h-10 w-10 rounded-full object-cover"
+                      size="sm"
                     />
                   </div>
 
@@ -1376,10 +1360,11 @@ export default function TweetCard({ tweet, onDelete, onUserProfileClick, onPostU
 
                   <div className="pl-15 relative">
                     <div className="relative flex-shrink-0 left-0 top-0">
-                      <img
+                      <Avatar
                         src={reply.user?.avatar ? getImageUrl(reply.user.avatar) : '/default_pp.webp'}
                         alt={reply.user?.name || 'Avatar par défaut'}
-                        className="h-10 w-10 rounded-full object-cover cursor-pointer"
+                        size="sm"
+                        className="cursor-pointer"
                         onClick={() => reply.user?.id && onUserProfileClick?.(reply.user.id)}
                       />
                     </div>

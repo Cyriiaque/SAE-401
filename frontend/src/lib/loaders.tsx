@@ -412,12 +412,10 @@ export async function deletePost(postId: number): Promise<void> {
 
         if (postInfoResponse.ok) {
             const postData = await postInfoResponse.json();
-            console.log("Données récupérées pour le post à supprimer:", postData);
 
             // Récupérer les médias du post
             if (postData && postData.mediaUrl) {
                 mediaUrls = postData.mediaUrl.split(',').filter(Boolean);
-                console.log(`Post à supprimer contient ${mediaUrls.length} fichiers médias:`, mediaUrls);
             } else {
                 console.warn(`Format de réponse inattendu pour le post ${postId}:`, postData);
             }
@@ -432,7 +430,6 @@ export async function deletePost(postId: number): Promise<void> {
         }
 
         // Étape 2: Supprimer le post lui-même
-        console.log(`Suppression du post ${postId}...`);
         const deleteResponse = await fetch(`${API_BASE_URL}/posts/${postId}`, {
             method: 'DELETE',
             headers: {
@@ -451,11 +448,8 @@ export async function deletePost(postId: number): Promise<void> {
             throw new Error('Erreur lors de la suppression du post');
         }
 
-        console.log(`Post ${postId} supprimé avec succès`);
-
         // Étape 3: Pour chaque média, vérifier s'il est utilisé par d'autres posts avant de le supprimer
         if (mediaUrls.length > 0) {
-            console.log(`Vérification des ${mediaUrls.length} fichiers médias associés au post ${postId}...`);
 
             // Pour chaque média, extraire seulement le nom du fichier (sans le chemin)
             const cleanMediaUrls = mediaUrls.map(url => {
@@ -467,8 +461,6 @@ export async function deletePost(postId: number): Promise<void> {
                 // Si c'est une URL complète, extraire le nom du fichier
                 return url.split('/').pop() || url;
             });
-
-            console.log("URLs des médias nettoyées:", cleanMediaUrls);
 
             // Vérifier chaque média un par un
             for (const filename of cleanMediaUrls) {
@@ -486,11 +478,7 @@ export async function deletePost(postId: number): Promise<void> {
 
                         // Si ce média n'est plus utilisé par aucun post, le supprimer
                         if (usageData.count === 0) {
-                            console.log(`Le média ${filename} n'est plus utilisé par aucun post, suppression...`);
                             await deleteMediaFile(filename);
-                            console.log(`Fichier ${filename} supprimé avec succès`);
-                        } else {
-                            console.log(`Le média ${filename} est encore utilisé par ${usageData.count} post(s), conservation du fichier.`);
                         }
                     } else {
                         // En cas d'erreur lors de la vérification, on tente de supprimer le fichier par sécurité
@@ -501,8 +489,6 @@ export async function deletePost(postId: number): Promise<void> {
                     console.error(`Erreur lors de la vérification/suppression du fichier ${filename}:`, error);
                 }
             }
-        } else {
-            console.log(`Le post ${postId} ne contenait pas de médias à supprimer`);
         }
     } catch (error) {
         console.error(`Erreur lors de la suppression du post ${postId}:`, error);
@@ -734,11 +720,6 @@ export async function deleteMediaFile(filename: string): Promise<void> {
     const cleanFilename = filename.includes('/') ? filename.split('/').pop() || filename : filename;
 
     try {
-        console.log(`Demande de suppression du fichier: ${cleanFilename}`);
-
-        // Afficher les détails de la requête pour le débogage
-        console.log('Requête DELETE envoyée à:', `${API_BASE_URL}/media/delete`);
-        console.log('Corps de la requête:', JSON.stringify({ filename: cleanFilename }));
 
         const response = await fetch(`${API_BASE_URL}/media/delete`, {
             method: 'POST',
@@ -748,9 +729,6 @@ export async function deleteMediaFile(filename: string): Promise<void> {
             },
             body: JSON.stringify({ filename: cleanFilename })
         });
-
-        // Log détaillé de la réponse pour le débogage
-        console.log(`Réponse du serveur pour la suppression de ${cleanFilename}: Status ${response.status}`);
 
         if (!response.ok) {
             let errorData;
@@ -780,13 +758,6 @@ export async function deleteMediaFile(filename: string): Promise<void> {
             throw new Error(errorData.message || 'Erreur lors de la suppression du média');
         }
 
-        // Tentative de récupération de la réponse
-        try {
-            const successData = await response.json();
-            console.log(`Fichier ${cleanFilename} supprimé avec succès:`, successData);
-        } catch (e) {
-            console.log(`Fichier ${cleanFilename} probablement supprimé avec succès, mais pas de données dans la réponse`);
-        }
     } catch (error) {
         console.error(`Échec de suppression du fichier ${cleanFilename}:`, error);
         // Ne pas propager l'erreur pour éviter de bloquer le flux principal

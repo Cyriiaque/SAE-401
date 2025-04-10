@@ -2,6 +2,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import Button from '../ui/buttons';
 import { User, getImageUrl } from '../lib/loaders';
 import { useAuth } from '../contexts/AuthContext';
+import Avatar from '../ui/Avatar';
 
 const EditProfileModal = ({
     isOpen,
@@ -367,10 +368,11 @@ const EditProfileModal = ({
                                 onClick={() => openImageImportOverlay('avatar')}
                             >
                                 {avatarPreview ? (
-                                    <img
+                                    <Avatar
                                         src={avatarPreview}
                                         alt="Aperçu de l'avatar"
-                                        className="w-full h-full rounded-full object-cover"
+                                        size="lg"
+                                        className="w-full h-full"
                                     />
                                 ) : (
                                     <span className="text-gray-500">Avatar</span>

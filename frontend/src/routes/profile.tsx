@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import Button from '../ui/buttons';
 import TweetCard from '../components/TweetCard';
 import Sidebar from '../components/Sidebar';
-import ConfirmModal from '../components/ConfirmModal';
+import ConfirmModal from '../ui/ConfirmModal';
 import EditProfileModal from '../components/EditProfileModal';
 import Header from '../components/Header';
 import {
@@ -260,10 +260,6 @@ export default function Profile() {
         setUpdatingRestriction(true);
         try {
             const newValue = !followerRestriction;
-            console.log(`Mise à jour de followerRestriction: ${followerRestriction} → ${newValue}`);
-
-            const updatedUser = await updateUser(user.id, { followerRestriction: newValue });
-            console.log('Réponse API:', updatedUser);
 
             // Mettre à jour l'état local
             setFollowerRestriction(newValue);
@@ -272,7 +268,6 @@ export default function Profile() {
             const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
             currentUser.followerRestriction = newValue;
             localStorage.setItem('user', JSON.stringify(currentUser));
-            console.log('LocalStorage mis à jour avec followerRestriction =', newValue);
 
             // Mettre à jour le contexte utilisateur sans recharger la page
             setUser({

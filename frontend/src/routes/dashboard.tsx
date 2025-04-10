@@ -5,7 +5,7 @@ import Button from '../ui/buttons';
 import { useAuth } from '../contexts/AuthContext';
 import Sidebar from '../components/Sidebar';
 import EditUserModal from '../components/EditUserModal';
-import ConfirmModal from '../components/ConfirmModal';
+import ConfirmModal from '../ui/ConfirmModal';
 import TweetCard from '../components/TweetCard';
 
 export default function Dashboard() {

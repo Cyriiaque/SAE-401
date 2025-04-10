@@ -3,8 +3,9 @@ import { User, fetchUserPosts, Tweet, fetchUserProfile, checkFollowStatus, toggl
 import { useAuth } from '../contexts/AuthContext';
 import Button from '../ui/buttons';
 import TweetCard from './TweetCard';
-import ConfirmModal from './ConfirmModal';
+import ConfirmModal from '../ui/ConfirmModal';
 import { FollowRequests } from './FollowRequests';
+import Avatar from '../ui/Avatar';
 
 function formatContent(content: string): string {
     let maxLength;
@@ -281,10 +282,11 @@ export default function UserProfile({ userId, onClose }: UserProfileProps) {
 
                 {/* Photo de profil */}
                 <div className="absolute -bottom-16 left-4">
-                    <img
+                    <Avatar
                         src={user.avatar ? getImageUrl(user.avatar) : '/default_pp.webp'}
                         alt={user.name || 'Avatar par défaut'}
-                        className="w-32 h-32 rounded-full border-4 border-white object-cover"
+                        size="lg"
+                        className="border-4 border-white"
                     />
                 </div>
             </div>

@@ -816,7 +816,7 @@ class PostController extends AbstractController
     }
 
     // Modifier la méthode fetchPosts pour inclure les informations de retweet
-    private function formatPostForResponse(Post $post, User $currentUser = null, PostInteractionRepository $interactionRepository = null): array
+    private function formatPostForResponse(Post $post, ?User $currentUser = null, ?PostInteractionRepository $interactionRepository = null): array
     {
         $postData = [
             'id' => $post->getId(),
