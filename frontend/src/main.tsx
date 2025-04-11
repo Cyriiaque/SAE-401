@@ -11,7 +11,7 @@ import Settings from './routes/Settings';
 import Notifications from './routes/notifications';
 import { AuthProvider } from './contexts/AuthContext';
 import { PostModalProvider } from './contexts/PostModalContext';
-import ProtectedRoute from './components/ProtectedRoute';
+import ProtectedRoute from './ui/ProtectedRoute';
 
 import './index.css';
 
